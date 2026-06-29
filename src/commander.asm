@@ -5,8 +5,7 @@
 ; for Commodore PET 3032
 ;
 ; Build:  dasm src/commander.asm -f1 -o build/commander.prg
-; Run:    xpet -model 3032 -autostartprgmode 1 \
-;             -8 work.d64 -autostart build/commander.prg
+; Run:    xpet -model 3032 -drive8type 2031 -autostart work.d64
 ;
 ; The program borrows zero-page bytes $FB-$FE for indirect
 ; addressing (KERNAL tape pointers; safe while tape is idle).

@@ -12,12 +12,10 @@ mkdir -p "$OUT_DIR"
 
 if command -v docker >/dev/null 2>&1 && docker image inspect dasm >/dev/null 2>&1; then
     docker run --rm -v "$(pwd):/src" dasm dasm "$SRC" -f1 -o"$OUT"
-elif [ -x /home/desktop/PROJECT/ROOT/dasm-container/cache/dasm/dasm ]; then
-    /home/desktop/PROJECT/ROOT/dasm-container/cache/dasm/dasm "$SRC" -f1 -o"$OUT"
 elif command -v dasm >/dev/null 2>&1; then
     dasm "$SRC" -f1 -o"$OUT"
 else
-    echo "Error: no dasm binary found (docker dasm image, local cache, or system dasm)" >&2
+    echo "Error: no dasm binary found (docker dasm image or system dasm in PATH)" >&2
     exit 1
 fi
 

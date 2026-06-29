@@ -14,17 +14,9 @@ TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 
 # Tiny PRG: 10 PRINT "HELLO PET"
-python3 - "$TMP/hello.prg" <<'PY'
-import sys
-p = bytearray()
-p += bytes([0x01, 0x04])                 # load address $0401
-p += (0x040F).to_bytes(2, 'little')      # next-line ptr
-p += (10).to_bytes(2, 'little')          # line number
-p += bytes([0x99])                       # PRINT token
-p += b' "HELLO PET"'
-p += bytes([0x00, 0x00, 0x00])           # end-of-line + end-of-program
-open(sys.argv[1], 'wb').write(p)
-PY
+# Load address $0401, next-line $040F, line 10, PRINT token $99,
+# "HELLO PET", end-of-line $00, end-of-program $00 $00
+printf '\x01\x04\x0f\x04\x0a\x00\x99 "HELLO PET"\x00\x00\x00' > "$TMP/hello.prg"
 
 printf 'PET COMMANDER TEST DISK\nUSE ARROW KEYS\n' > "$TMP/readme.txt"
 printf 'A few notes for testing.\n'               > "$TMP/notes.txt"

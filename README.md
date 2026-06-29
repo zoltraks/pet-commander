@@ -42,7 +42,7 @@ After every DOS command the drive status is shown on the bottom row (e.g. `00,OK
 ./build.sh
 ```
 
-Uses `dasm` if present, otherwise falls back to the `dasm` Docker image (see `utility/dasm-assembler.md` in the commodore-pet-skill for setup).
+Uses the `dasm` Docker image if available, otherwise falls back to a local `dasm` binary in `PATH` (see `utility/dasm-assembler.md` in the commodore-pet-skill for setup).
 
 Output: `build/commander.prg`. PRG header carries load address `$0401`, so VICE inject-mode autostart works as-is.
 
@@ -61,15 +61,15 @@ VICE has three autostart modes for a standalone PRG file: VirtualFS, Inject, and
 
 The robust path is to embed the PRG inside the D64 and let VICE autostart the disk: VICE issues `LOAD"*",8` followed by `RUN` through BASIC's real LOAD routine, which sets every pointer correctly. As a bonus, the same disk stays mounted as drive 8 for the program to read.
 
-`run.sh` detects whether the system VICE PET ROM directory has the actual `*.bin` files and otherwise falls back to a known local copy via `-directory`.
+`run.sh` checks that `xpet` is available in `PATH`. VICE 3.7+ finds ROMs automatically from the bindist directory (Windows) or system/user paths (Linux) -- no manual ROM setup is needed with a standard install. See `utility/vice-emulator.md` in the commodore-pet-skill for ROM setup details if needed.
 
 The underlying invocation is:
 
 ```
-xpet -model 3032 [-directory <rom-base>] -autostartprgmode 1 -8 work.d64 -autostart build/commander.prg
+xpet -model 3032 -drive8type 2031 -autostart work.d64
 ```
 
-For a D64 image (1541 format), VICE also needs `-drive8type 1541`; for a native PET D80 image use `-drive8type 8050`.
+For a native PET D80 image use `-drive8type 8050`.
 
 ## Verified
 
