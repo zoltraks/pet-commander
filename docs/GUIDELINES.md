@@ -51,6 +51,11 @@ Never assume a subset is sufficient, no matter how small the change.
 
 ## Development Principles
 
+### Commit Policy
+
+- **Never commit changes automatically.** The user will commit manually when ready.
+- Do not run `git commit`, `git push`, or any version-control write command unless explicitly told to do so.
+
 ### Code Quality
 
 - **Clarity Over Cleverness**: Assembly is already terse. Favour readable label names and section comments over packed tricks.
