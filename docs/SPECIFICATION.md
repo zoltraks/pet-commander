@@ -59,6 +59,8 @@ These values must not be hard-coded ad hoc elsewhere. They are defined once at t
 | ------------ | ------- | ------------------------------------------------ |
 | `SCREEN`     | `$8000` | Base of 40x25 screen RAM.                        |
 | `PANEL_ROWS` | `20`    | Visible directory rows per panel.                |
+| `PANEL_WIDTH`| `20`    | Columns per panel including frame borders.       |
+| `PANEL_INNER`| `18`    | Inner content columns (excluding frame borders). |
 | `MAX_ENTRY`  | `64`    | Maximum entries per panel.                       |
 | `ENT_SIZE`   | `20`    | Bytes per entry record.                          |
 | `sp_lo/hi`   | `$FB/$FC` | Borrowed primary indirect pointer.             |

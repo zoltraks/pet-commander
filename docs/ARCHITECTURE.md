@@ -36,10 +36,10 @@ Each module is a labelled section of `src/commander.asm`. Responsibilities are k
 | Main loop            | `main_loop`, `dispatch_key`           | Read a key, route to a handler, check the quit flag.            |
 | KERNAL wrappers      | `pet_setnam`, `pet_setlfs`, `pet_open`, `pet_close` | PET-specific OPEN/CLOSE that bypass BASIC parameter parsing.    |
 | Navigation           | `cursor_up`, `cursor_down`, `do_up`, `do_down`, `do_home`, `do_switch` | Move selection, scroll the window, switch active panel.        |
-| Screen drawing       | `full_redraw`, `redraw_panels`, `redraw_active`, `clear_screen`, `draw_title_bar`, `draw_frames`, `draw_help_bar`, `draw_status`, `draw_panel`, `draw_entry` | Compose the static frame and dynamic panel content into `$8000`. |
-| Number / text format | `print_num3`, `mul20`, `petscii_to_screen`, `row_addr_sp` | Helpers for block counts, record indexing, and PETSCII-to-screen-code conversion. |
+| Screen drawing       | `full_redraw`, `redraw_panels`, `redraw_active`, `clear_screen`, `draw_title_bar`, `draw_frames`, `draw_help_bar`, `draw_status`, `draw_panel`, `draw_panel_header`, `draw_panel_rows`, `draw_entry` | Compose the static frame and dynamic panel content into `$8000`. |
+| Number / text format | `print_num3`, `mul20`, `petscii_to_screen`, `row_addr_sp`, `panel_entry_sp` | Helpers for block counts, record indexing, and PETSCII-to-screen-code conversion. |
 | Directory loader     | `load_panel`                          | Open `$`, run the directory parse state machine, fill the entry buffer. |
-| File operations      | `op_delete`, `op_rename`, `op_copy`   | Build a CBM-DOS command for the selected entry and send it.     |
+| File operations      | `op_delete`, `op_rename`, `op_copy`, `op_cancel`   | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.     |
 | DOS channel          | `send_dos_cmd`, `read_dos_status`     | Send a command on channel 15 and read back the status string.   |
 | Prompts              | `prompt_text`, `prompt_yn`, `draw_prompt_label`, `show_prompt_buf` | Bottom-line text entry and yes/no confirmation.                 |
 | Data buffers         | `entries_p0`, `entries_p1`, `cmd_buf`, `prompt_buf`, `savename`, `status_buf` | Per-panel entry tables and scratch buffers.                     |

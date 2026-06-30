@@ -57,8 +57,10 @@ BLNSW   = $00A7
 SCREEN  = $8000
 
 ; ---- Layout constants ---------------------------------
-PANEL_ROWS = 20                 ; visible directory rows in each panel
-MAX_ENTRY  = 64                 ; entries per panel
+PANEL_ROWS  = 20                ; visible directory rows in each panel
+PANEL_WIDTH = 20                ; columns per panel including frame borders
+PANEL_INNER = 18                ; inner content columns (excluding frame borders)
+MAX_ENTRY   = 64                ; entries per panel
 ENT_SIZE   = 20                 ; bytes per entry record
                                 ; layout: blo, bhi, type, name[16], pad
 
@@ -249,6 +251,9 @@ init:
         lda #$01
         sta BLNSW               ; disable cursor blink
 
+        lda #0
+        sta quit_flag           ; clear stale quit flag from previous RUN
+
         lda #$93                ; PETSCII CLR/HOME
         jsr CHROUT
         rts
@@ -342,7 +347,7 @@ do_reload:
 
         lda active_panel
         jsr load_panel
-        jsr full_redraw
+        jsr redraw_panels
         rts
 
 do_switch:
@@ -539,7 +544,7 @@ df_top1:
 
         sta (sp_lo),y
         iny
-        cpy #19
+        cpy #(PANEL_WIDTH-1)
         bne df_top1
         lda #BOX_TDOWN
         sta (sp_lo),y
@@ -550,7 +555,7 @@ df_top2:
 
         sta (sp_lo),y
         iny
-        cpy #39
+        cpy #(PANEL_WIDTH*2-1)
         bne df_top2
         lda #BOX_TR
         sta (sp_lo),y
@@ -565,13 +570,13 @@ df_sides:
         ldy #0
         lda #BOX_V
         sta (sp_lo),y
-        ldy #19
+        ldy #(PANEL_WIDTH-1)
         lda #BOX_V
         sta (sp_lo),y
-        ldy #20
+        ldy #PANEL_WIDTH
         lda #BOX_V
         sta (sp_lo),y
-        ldy #39
+        ldy #(PANEL_WIDTH*2-1)
         lda #BOX_V
         sta (sp_lo),y
         ldx df_row
@@ -592,7 +597,7 @@ df_bot1:
 
         sta (sp_lo),y
         iny
-        cpy #19
+        cpy #(PANEL_WIDTH-1)
         bne df_bot1
         lda #BOX_TUP
         sta (sp_lo),y
@@ -603,7 +608,7 @@ df_bot2:
 
         sta (sp_lo),y
         iny
-        cpy #39
+        cpy #(PANEL_WIDTH*2-1)
         bne df_bot2
         lda #BOX_BR
         sta (sp_lo),y
@@ -713,6 +718,15 @@ draw_panel:
         tax
         lda col_offset,x
         sta cur_col
+        jsr draw_panel_header
+        jsr draw_panel_rows
+        rts
+
+; =========================================================
+; draw_panel_header: render drive number + disk title on row 2
+; =========================================================
+
+draw_panel_header:
 
         ; ---- Header row (screen row 2) ----
         ldx #2
@@ -725,7 +739,7 @@ draw_panel:
         adc #0
         sta dp_hi
 
-        ; Clear the 18 inner cols
+        ; Clear the inner cols
         ldy #0
         lda #SC_SPACE
 
@@ -733,7 +747,7 @@ dp_hclr:
 
         sta (dp_lo),y
         iny
-        cpy #18
+        cpy #PANEL_INNER
         bne dp_hclr
 
         ; "8: " (drive number)
@@ -790,7 +804,7 @@ dp_tit_store:
 
 dp_titcp_done:
 
-        ; Header row done; reverse the inner 18 cols for emphasis
+        ; Header row done; reverse the inner cols for emphasis
         ldy #0
 
 dp_hrvs:
@@ -799,8 +813,15 @@ dp_hrvs:
         ora #$80
         sta (dp_lo),y
         iny
-        cpy #18
+        cpy #PANEL_INNER
         bne dp_hrvs
+        rts
+
+; =========================================================
+; draw_panel_rows: render PANEL_ROWS file rows (rows 3..22)
+; =========================================================
+
+draw_panel_rows:
 
         ; ---- File rows: screen rows 3 .. 3+PANEL_ROWS-1 ----
         ldx #0
@@ -830,7 +851,7 @@ dp_rows:
         adc #0
         sta dp_hi
 
-        ; clear 18 inner cols
+        ; clear inner cols
         ldy #0
         lda #SC_SPACE
 
@@ -838,7 +859,7 @@ dp_clr:
 
         sta (dp_lo),y
         iny
-        cpy #18
+        cpy #PANEL_INNER
         bne dp_clr
 
         ; abs_idx < count?
@@ -867,7 +888,7 @@ dp_rvs:
         ora #$80
         sta (dp_lo),y
         iny
-        cpy #18
+        cpy #PANEL_INNER
         bne dp_rvs
 
 dp_row_done:
@@ -905,34 +926,8 @@ dp_tit_a:       byte 0
 
 draw_entry:
 
-        ; Pick base of entries array
-        lda cur_panel
-        bne de_p1
-        lda #<entries_p0
-        sta sp_lo
-        lda #>entries_p0
-        sta sp_hi
-        jmp de_add
-
-de_p1:
-
-        lda #<entries_p1
-        sta sp_lo
-        lda #>entries_p1
-        sta sp_hi
-
-de_add:
-
-        ; sp += cur_absidx * 20
-        lda cur_absidx
-        jsr mul20               ; result in m20_lo/m20_hi
-        lda sp_lo
-        clc
-        adc m20_lo
-        sta sp_lo
-        lda sp_hi
-        adc m20_hi
-        sta sp_hi
+        ; sp = entries_pN + cur_absidx * 20
+        jsr panel_entry_sp
 
         ; ---- Block count -> num_lo/num_hi ----
         ldy #0
@@ -1502,8 +1497,6 @@ lp_b_s2:
         cmp #$3C
         beq lp_b_loop
         ; this byte is first type char
-        ldy #2
-        sta (sp_lo),y
         jsr petscii_to_screen
         ldy #2
         sta (sp_lo),y
@@ -1584,30 +1577,30 @@ dollar:         byte "$"
 msg_no_disk:    byte "DRIVE NOT READY",0
 
 ; =========================================================
-; entry_record_sp: sp_lo/sp_hi = entries_pN + p_count[N]*20
+; panel_entry_sp: sp_lo/sp_hi = entries_pN + cur_absidx * 20
+; Uses cur_panel to select table, cur_absidx as index.
 ; =========================================================
 
-entry_record_sp:
+panel_entry_sp:
 
         lda cur_panel
-        bne ers_p1
+        bne pes_p1
         lda #<entries_p0
         sta sp_lo
         lda #>entries_p0
         sta sp_hi
-        jmp ers_add
+        jmp pes_add
 
-ers_p1:
+pes_p1:
 
         lda #<entries_p1
         sta sp_lo
         lda #>entries_p1
         sta sp_hi
 
-ers_add:
+pes_add:
 
-        ldx cur_panel
-        lda p_count,x
+        lda cur_absidx
         jsr mul20
         lda sp_lo
         clc
@@ -1617,6 +1610,17 @@ ers_add:
         adc m20_hi
         sta sp_hi
         rts
+
+; =========================================================
+; entry_record_sp: sp_lo/sp_hi = entries_pN + p_count[N]*20
+; =========================================================
+
+entry_record_sp:
+
+        ldx cur_panel
+        lda p_count,x
+        sta cur_absidx
+        jmp panel_entry_sp
 
 ; =========================================================
 ; selected_entry_sp: sp_lo/sp_hi -> active panel's selected entry
@@ -1629,41 +1633,16 @@ selected_entry_sp:
         sta cur_panel
         ldx cur_panel
         lda p_count,x
-        bne ses_have
-        sec
-        rts
-
-ses_have:
-
+        beq ses_empty
         lda p_sel,x
         sta cur_absidx
-        lda cur_panel
-        bne ses_p1
-        lda #<entries_p0
-        sta sp_lo
-        lda #>entries_p0
-        sta sp_hi
-        jmp ses_add
-
-ses_p1:
-
-        lda #<entries_p1
-        sta sp_lo
-        lda #>entries_p1
-        sta sp_hi
-
-ses_add:
-
-        lda cur_absidx
-        jsr mul20
-        lda sp_lo
+        jsr panel_entry_sp
         clc
-        adc m20_lo
-        sta sp_lo
-        lda sp_hi
-        adc m20_hi
-        sta sp_hi
-        clc
+        rts
+
+ses_empty:
+
+        sec
         rts
 
 ; =========================================================
@@ -1755,14 +1734,12 @@ op_del_have:
 
         lda active_panel
         jsr load_panel
-        jsr full_redraw
+        jsr redraw_panels
         rts
 
 op_del_cancel:
 
-        jsr clear_status
-        jsr full_redraw
-        rts
+        jmp op_cancel
 
 msg_confirm_del:        byte "DELETE? Y/N",0
 
@@ -1845,14 +1822,12 @@ op_ren_send:
 
         lda active_panel
         jsr load_panel
-        jsr full_redraw
+        jsr redraw_panels
         rts
 
 op_ren_cancel:
 
-        jsr clear_status
-        jsr full_redraw
-        rts
+        jmp op_cancel
 
 msg_new_name:           byte "NEW NAME",0
 
@@ -1935,16 +1910,24 @@ op_cp_send:
 
         lda active_panel
         jsr load_panel
-        jsr full_redraw
+        jsr redraw_panels
         rts
 
 op_cp_cancel:
 
-        jsr clear_status
-        jsr full_redraw
-        rts
+        jmp op_cancel
 
 msg_copy_to:            byte "COPY TO",0
+
+; =========================================================
+; op_cancel: shared cancel cleanup for file operations
+; =========================================================
+
+op_cancel:
+
+        jsr clear_status
+        jsr redraw_panels
+        rts
 
 ; =========================================================
 ; send_dos_cmd: open command channel with cmd_buf[0..cmd_len-1]
