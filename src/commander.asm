@@ -70,14 +70,16 @@ dp_hi   = $FE
 
 ; ---- PETSCII / screen codes ---------------------------
 SC_SPACE  = $20
-BOX_TL    = $66
-BOX_TR    = $67
-BOX_BR    = $68
-BOX_BL    = $69
-BOX_HTOP  = $62
-BOX_HBOT  = $64
-BOX_VLEFT = $65
-BOX_VRIGHT= $63
+; Center-line box-drawing style (see docs/skill/commodore-pet-skill/system/graphics.md)
+; All codes are identical in both character sets -- no charset switching needed.
+BOX_TL    = $70           ; corner TL (h-right + v-down)
+BOX_TR    = $6E           ; corner TR (h-left + v-down)
+BOX_BR    = $7D           ; corner BR (h-left + v-up)
+BOX_BL    = $6D           ; corner BL (h-right + v-up)
+BOX_H     = $40           ; horizontal center line
+BOX_V     = $5D           ; vertical center line
+BOX_TDOWN = $72           ; T-junction down (top border at panel divider)
+BOX_TUP   = $71           ; T-junction up (bottom border at panel divider)
 
 ; ---- PETSCII keys -------------------------------------
 K_UP    = $91
@@ -530,7 +532,7 @@ draw_frames:
         ldy #0
         lda #BOX_TL
         sta (sp_lo),y
-        lda #BOX_HTOP
+        lda #BOX_H
         ldy #1
 
 df_top1:
@@ -539,13 +541,10 @@ df_top1:
         iny
         cpy #19
         bne df_top1
-        lda #BOX_TR
+        lda #BOX_TDOWN
         sta (sp_lo),y
         iny
-        lda #BOX_TL
-        sta (sp_lo),y
-        iny
-        lda #BOX_HTOP
+        lda #BOX_H
 
 df_top2:
 
@@ -564,16 +563,16 @@ df_sides:
         stx df_row
         jsr row_addr_sp
         ldy #0
-        lda #BOX_VLEFT
+        lda #BOX_V
         sta (sp_lo),y
         ldy #19
-        lda #BOX_VRIGHT
+        lda #BOX_V
         sta (sp_lo),y
         ldy #20
-        lda #BOX_VLEFT
+        lda #BOX_V
         sta (sp_lo),y
         ldy #39
-        lda #BOX_VRIGHT
+        lda #BOX_V
         sta (sp_lo),y
         ldx df_row
         inx
@@ -586,7 +585,7 @@ df_sides:
         ldy #0
         lda #BOX_BL
         sta (sp_lo),y
-        lda #BOX_HBOT
+        lda #BOX_H
         ldy #1
 
 df_bot1:
@@ -595,13 +594,10 @@ df_bot1:
         iny
         cpy #19
         bne df_bot1
-        lda #BOX_BR
+        lda #BOX_TUP
         sta (sp_lo),y
         iny
-        lda #BOX_BL
-        sta (sp_lo),y
-        iny
-        lda #BOX_HBOT
+        lda #BOX_H
 
 df_bot2:
 
