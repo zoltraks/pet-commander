@@ -64,6 +64,13 @@ MAX_ENTRY   = 64                ; entries per panel
 ENT_SIZE   = 20                 ; bytes per entry record
                                 ; layout: blo, bhi, type, name[16], pad
 
+; ---- Viewer layout constants ---------------------------
+VIEW_ROWS      = 22             ; visible content rows (rows 1..22)
+VIEW_TEXT_COLS = 40             ; columns per text-mode row
+VIEW_HEX_COLS  = 8              ; bytes per hex-mode row
+VIEW_CHUNK     = 2048           ; chunk buffer size for partial load
+VIEW_LFN       = 3              ; logical file number for the viewer
+
 ; ---- ZP pointers (borrowed) ---------------------------
 sp_lo   = $FB                   ; primary indirect pointer (source / entry)
 sp_hi   = $FC
@@ -72,6 +79,7 @@ dp_hi   = $FE
 
 ; ---- PETSCII / screen codes ---------------------------
 SC_SPACE  = $20
+SC_DOT    = $2E           ; screen code for '.' (non-printable placeholder)
 ; Center-line box-drawing style (see docs/skill/commodore-pet-skill/system/graphics.md)
 ; All codes are identical in both character sets -- no charset switching needed.
 BOX_TL    = $70           ; corner TL (h-right + v-down)
@@ -80,8 +88,6 @@ BOX_BR    = $7D           ; corner BR (h-left + v-up)
 BOX_BL    = $6D           ; corner BL (h-right + v-up)
 BOX_H     = $40           ; horizontal center line
 BOX_V     = $5D           ; vertical center line
-BOX_TDOWN = $72           ; T-junction down (top border at panel divider)
-BOX_TUP   = $71           ; T-junction up (bottom border at panel divider)
 
 ; ---- PETSCII keys -------------------------------------
 K_UP    = $91
@@ -104,6 +110,9 @@ CH_L    = $4C
 CH_D    = $44
 CH_Q    = $51
 CH_Y    = $59
+CH_V    = $56
+CH_H    = $48
+CH_T    = $54
 CH_0    = $30
 CH_COLON = $3A
 CH_EQ   = $3D
@@ -321,6 +330,8 @@ dispatch_key:
         beq do_rename
         cmp #CH_C
         beq do_copy
+        cmp #CH_V
+        beq do_view
         cmp #K_TAB
         beq do_switch
         cmp #K_SPACE
@@ -382,6 +393,7 @@ do_home:
 do_delete:      jmp op_delete
 do_rename:      jmp op_rename
 do_copy:        jmp op_copy
+do_view:        jmp op_view
 
 ; =========================================================
 ; cursor_up / cursor_down: move p_sel and adjust p_top
@@ -546,7 +558,10 @@ df_top1:
         iny
         cpy #(PANEL_WIDTH-1)
         bne df_top1
-        lda #BOX_TDOWN
+        lda #BOX_TR              ; left panel top-right corner (col 19)
+        sta (sp_lo),y
+        iny
+        lda #BOX_TL              ; right panel top-left corner (col 20)
         sta (sp_lo),y
         iny
         lda #BOX_H
@@ -599,7 +614,10 @@ df_bot1:
         iny
         cpy #(PANEL_WIDTH-1)
         bne df_bot1
-        lda #BOX_TUP
+        lda #BOX_BR              ; left panel bottom-right corner (col 19)
+        sta (sp_lo),y
+        iny
+        lda #BOX_BL              ; right panel bottom-left corner (col 20)
         sta (sp_lo),y
         iny
         lda #BOX_H
@@ -2221,6 +2239,822 @@ py_no:
         jsr clear_status
         sec
         rts
+
+; =========================================================
+; Viewer: modal file viewer with text and hex display
+; Opens the selected file, loads chunks into view_chunk,
+; renders text or hex, scrolls, and restores panels on close.
+; =========================================================
+
+; ---- byte_to_hex: convert A to two hex-digit screen codes ----
+; Input:  A = byte
+; Output: A = high nibble screen code, Y = low nibble screen code
+; Clobbers nothing else.
+
+byte_to_hex:
+
+        sta bth_tmp
+        and #$0F
+        jsr nibble_to_sc
+        tay                     ; Y = low nibble
+        lda bth_tmp
+        lsr
+        lsr
+        lsr
+        lsr
+        jsr nibble_to_sc        ; A = high nibble
+        rts
+
+; nibble_to_sc: A = nibble (0-15) -> A = screen code for hex digit
+nibble_to_sc:
+
+        cmp #10
+        bcc nts_digit
+        sbc #9                  ; carry set: A = nibble - 9 (10->1='A', 15->6='F')
+        rts
+nts_digit:
+
+        clc
+        adc #$30                ; 0-9 -> $30-$39
+        rts
+
+; ---- write_hex_byte: write 2 hex screen codes at (sp_lo),Y ----
+; Input:  A = byte, sp_lo/sp_hi = screen row, Y = column
+; Output: Y advanced by 2
+
+write_hex_byte:
+
+        sta whb_tmp
+        lsr
+        lsr
+        lsr
+        lsr
+        jsr nibble_to_sc
+        sta (sp_lo),y
+        iny
+        lda whb_tmp
+        and #$0F
+        jsr nibble_to_sc
+        sta (sp_lo),y
+        iny
+        rts
+
+; ---- view_calc_valid: bytes available in current row ----
+; Returns A = min(view_chunk_len - vr_bufcur, view_row_size), 0 if past EOF
+
+view_calc_valid:
+
+        lda vr_bufcur+1
+        cmp view_chunk_len+1
+        bcc vcv_calc
+        bne vcv_zero
+        lda vr_bufcur
+        cmp view_chunk_len
+        bcc vcv_calc
+vcv_zero:
+
+        lda #0
+        rts
+vcv_calc:
+
+        sec
+        lda view_chunk_len
+        sbc vr_bufcur
+        sta vcv_tmp
+        lda view_chunk_len+1
+        sbc vr_bufcur+1
+        bne vcv_clamp           ; high byte nonzero -> > 255 -> clamp
+        lda vcv_tmp
+        cmp view_row_size
+        bcc vcv_done
+vcv_clamp:
+
+        lda view_row_size
+vcv_done:
+
+        rts
+
+; =========================================================
+; op_view: open the viewer on the selected file
+; =========================================================
+
+op_view:
+
+        jsr selected_entry_sp
+        bcs ov_exit              ; empty panel
+        jsr copy_name_to_savename
+        jsr view_copy_fname
+        ; Init viewer state
+        lda #0
+        sta view_mode
+        sta view_top
+        sta view_top+1
+        sta view_chunk_base
+        sta view_chunk_base+1
+        sta view_at_eof
+        jsr view_set_mode_params
+        jsr view_load_chunk
+        bcs ov_exit              ; open failed, status already set
+        jsr view_loop
+        jsr full_redraw          ; restore panels
+ov_exit:
+
+        rts
+
+; ---- view_copy_fname: copy savename -> view_fname ----
+
+view_copy_fname:
+
+        ldx #0
+vcf_loop:
+
+        cpx savename_len
+        bcs vcf_done
+        lda savename,x
+        sta view_fname,x
+        inx
+        jmp vcf_loop
+vcf_done:
+
+        stx view_fname_len
+        rts
+
+; ---- view_set_mode_params: set view_row_size and view_screen_size ----
+
+view_set_mode_params:
+
+        lda view_mode
+        beq vsm_text
+        lda #VIEW_HEX_COLS
+        sta view_row_size
+        lda #<(VIEW_ROWS*VIEW_HEX_COLS)
+        sta view_screen_size
+        lda #>(VIEW_ROWS*VIEW_HEX_COLS)
+        sta view_screen_size+1
+        rts
+vsm_text:
+
+        lda #VIEW_TEXT_COLS
+        sta view_row_size
+        lda #<(VIEW_ROWS*VIEW_TEXT_COLS)
+        sta view_screen_size
+        lda #>(VIEW_ROWS*VIEW_TEXT_COLS)
+        sta view_screen_size+1
+        rts
+
+; =========================================================
+; view_load_chunk: open file, skip to view_chunk_base, read chunk, close
+; Returns C=1 on open failure (status set), C=0 on success.
+; =========================================================
+
+view_load_chunk:
+
+        jsr restore_zp
+        jsr CLALL
+        lda view_fname_len
+        ldx #<view_fname
+        ldy #>view_fname
+        jsr pet_setnam
+        ldx active_panel
+        lda p_drive,x
+        sta cur_drive
+        lda #VIEW_LFN
+        ldx cur_drive
+        ldy #0                  ; SA=0 (read)
+        jsr pet_setlfs
+        jsr restore_zp
+        jsr pet_open
+        bcc vlc_opened
+        jmp vlc_err
+vlc_opened:
+
+        jsr restore_zp
+        ldx #VIEW_LFN
+        jsr CHKIN
+        ; Skip view_chunk_base bytes
+        lda view_chunk_base
+        sta vlc_skl
+        lda view_chunk_base+1
+        sta vlc_skh
+vlc_skip:
+
+        lda vlc_skl
+        ora vlc_skh
+        beq vlc_read_init
+        jsr CHRIN
+        lda STATUS
+        bne vlc_read_init       ; EOF during skip
+        lda vlc_skl
+        bne vlc_skip_dec
+        dec vlc_skh
+vlc_skip_dec:
+
+        dec vlc_skl
+        jmp vlc_skip
+vlc_read_init:
+
+        lda #0
+        sta view_chunk_len
+        sta view_chunk_len+1
+        sta view_at_eof
+        lda #<view_chunk
+        sta sp_lo
+        lda #>view_chunk
+        sta sp_hi
+        ldy #0
+vlc_read:
+
+        lda view_chunk_len+1
+        cmp #>VIEW_CHUNK
+        bcc vlc_read_byte
+        bne vlc_done
+        lda view_chunk_len
+        cmp #<VIEW_CHUNK
+        bcs vlc_done
+vlc_read_byte:
+
+        jsr CHRIN
+        sta (sp_lo),y
+        inc view_chunk_len
+        bne vlc_chk
+        inc view_chunk_len+1
+vlc_chk:
+
+        lda STATUS
+        bne vlc_eof
+        iny
+        bne vlc_read
+        inc sp_hi
+        jmp vlc_read
+vlc_eof:
+
+        lda #1
+        sta view_at_eof
+vlc_done:
+
+        jsr restore_zp
+        jsr CLRCHN
+        lda #VIEW_LFN
+        jsr pet_close
+        clc
+        rts
+vlc_err:
+
+        lda #<msg_view_err
+        ldy #>msg_view_err
+        jsr set_status
+        sec
+        rts
+
+; =========================================================
+; view_render: clear screen, draw title, content, help bar
+; =========================================================
+
+view_render:
+
+        jsr clear_screen
+        ; --- Title bar (row 0) ---
+        ldx #0
+        jsr row_addr_sp
+        ldy #0
+        ldx #0
+vr_title_pre:
+
+        lda view_title_str,x
+        beq vr_title_fn
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        iny
+        inx
+        jmp vr_title_pre
+vr_title_fn:
+
+        ldx #0
+vr_title_fn_loop:
+
+        cpx view_fname_len
+        bcs vr_title_mode
+        lda view_fname,x
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        iny
+        inx
+        jmp vr_title_fn_loop
+vr_title_mode:
+
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        lda #$5B               ; PETSCII '['
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        iny
+        lda view_mode
+        bne vr_title_hex
+        ldx #0
+vr_title_text_loop:
+
+        lda view_mode_text_str,x
+        beq vr_title_close
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        iny
+        inx
+        jmp vr_title_text_loop
+vr_title_hex:
+
+        ldx #0
+vr_title_hex_loop:
+
+        lda view_mode_hex_str,x
+        beq vr_title_close
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        iny
+        inx
+        jmp vr_title_hex_loop
+vr_title_close:
+
+        lda #$5D               ; PETSCII ']'
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        ; Reverse the title bar
+        ldy #0
+vr_title_rv:
+
+        lda (sp_lo),y
+        ora #$80
+        sta (sp_lo),y
+        iny
+        cpy #40
+        bne vr_title_rv
+        ; --- Content rows ---
+        lda view_mode
+        bne vr_hex_mode
+        jsr view_render_text
+        jmp vr_help
+vr_hex_mode:
+
+        jsr view_render_hex
+vr_help:
+
+        ; --- Help bar (row 24) ---
+        ldx #24
+        jsr row_addr_sp
+        ldy #0
+        ldx #0
+vr_help_loop:
+
+        lda view_help_str,x
+        beq vr_help_fill
+        jsr petscii_to_screen
+        sta (sp_lo),y
+        iny
+        inx
+        jmp vr_help_loop
+vr_help_fill:
+
+        lda #SC_SPACE
+vr_help_fill_loop:
+
+        cpy #40
+        bcs vr_done
+        sta (sp_lo),y
+        iny
+        jmp vr_help_fill_loop
+vr_done:
+
+        rts
+
+; =========================================================
+; view_render_text: render VIEW_ROWS rows of text (rows 1..22)
+; =========================================================
+
+view_render_text:
+
+        ; dp = view_chunk + (view_top - view_chunk_base)
+        sec
+        lda view_top
+        sbc view_chunk_base
+        sta vr_off
+        lda view_top+1
+        sbc view_chunk_base+1
+        sta vr_off+1
+        lda #<view_chunk
+        clc
+        adc vr_off
+        sta dp_lo
+        lda #>view_chunk
+        adc vr_off+1
+        sta dp_hi
+        lda vr_off
+        sta vr_bufcur
+        lda vr_off+1
+        sta vr_bufcur+1
+        ldx #1
+vrt_row:
+
+        stx vr_rownum
+        jsr row_addr_sp
+        jsr view_calc_valid
+        sta vr_valid
+        ldy #0
+        cpy vr_valid
+        bcs vrt_pad
+vrt_data_loop:
+
+        lda (dp_lo),y
+        cmp #$20
+        bcc vrt_data_dot
+        cmp #$7F
+        bcs vrt_data_dot
+        jsr petscii_to_screen
+        jmp vrt_data_store
+vrt_data_dot:
+
+        lda #SC_DOT
+vrt_data_store:
+
+        sta (sp_lo),y
+        iny
+        cpy vr_valid
+        bcc vrt_data_loop
+vrt_pad:
+
+        lda #SC_SPACE
+vrt_pad_loop:
+
+        cpy #VIEW_TEXT_COLS
+        bcs vrt_row_done
+        sta (sp_lo),y
+        iny
+        jmp vrt_pad_loop
+vrt_row_done:
+
+        lda dp_lo
+        clc
+        adc #VIEW_TEXT_COLS
+        sta dp_lo
+        lda dp_hi
+        adc #0
+        sta dp_hi
+        lda vr_bufcur
+        clc
+        adc #VIEW_TEXT_COLS
+        sta vr_bufcur
+        lda vr_bufcur+1
+        adc #0
+        sta vr_bufcur+1
+        ldx vr_rownum
+        inx
+        cpx #(1+VIEW_ROWS)
+        bne vrt_row
+        rts
+
+; =========================================================
+; view_render_hex: render VIEW_ROWS rows of hex (rows 1..22)
+; Row format: XXXX xx xx xx xx xx xx xx xx xxxxxxxx
+; =========================================================
+
+view_render_hex:
+
+        sec
+        lda view_top
+        sbc view_chunk_base
+        sta vr_off
+        lda view_top+1
+        sbc view_chunk_base+1
+        sta vr_off+1
+        lda #<view_chunk
+        clc
+        adc vr_off
+        sta dp_lo
+        lda #>view_chunk
+        adc vr_off+1
+        sta dp_hi
+        lda vr_off
+        sta vr_bufcur
+        lda vr_off+1
+        sta vr_bufcur+1
+        lda view_top
+        sta vr_fileoff
+        lda view_top+1
+        sta vr_fileoff+1
+        ldx #1
+vrh_row:
+
+        stx vr_rownum
+        jsr row_addr_sp
+        ; --- Offset (4 hex digits) ---
+        ldy #0
+        lda vr_fileoff+1
+        jsr write_hex_byte
+        lda vr_fileoff
+        jsr write_hex_byte
+        ; --- Space ---
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        ; --- Valid bytes in this row ---
+        jsr view_calc_valid
+        sta vr_valid
+        ; --- 8 hex bytes ---
+        ldx #0
+vrh_hex_loop:
+
+        cpx #0
+        beq vrh_hex_first
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+vrh_hex_first:
+
+        cpx vr_valid
+        bcs vrh_hex_pad
+        sty vr_ytmp
+        txa
+        tay
+        lda (dp_lo),y
+        ldy vr_ytmp
+        jsr write_hex_byte
+        jmp vrh_hex_next
+vrh_hex_pad:
+
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+        iny
+vrh_hex_next:
+
+        inx
+        cpx #VIEW_HEX_COLS
+        bne vrh_hex_loop
+        ; --- Space between hex and ASCII ---
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        ; --- 8 ASCII chars ---
+        ldx #0
+vrh_ascii_loop:
+
+        cpx vr_valid
+        bcs vrh_ascii_pad
+        sty vr_ytmp
+        txa
+        tay
+        lda (dp_lo),y
+        ldy vr_ytmp
+        cmp #$20
+        bcc vrh_ascii_dot
+        cmp #$7F
+        bcs vrh_ascii_dot
+        jsr petscii_to_screen
+        jmp vrh_ascii_put
+vrh_ascii_dot:
+
+        lda #SC_DOT
+        jmp vrh_ascii_put
+vrh_ascii_pad:
+
+        lda #SC_SPACE
+vrh_ascii_put:
+
+        sta (sp_lo),y
+        iny
+        inx
+        cpx #VIEW_HEX_COLS
+        bne vrh_ascii_loop
+        ; --- Advance for next row ---
+        lda dp_lo
+        clc
+        adc #VIEW_HEX_COLS
+        sta dp_lo
+        lda dp_hi
+        adc #0
+        sta dp_hi
+        lda vr_bufcur
+        clc
+        adc #VIEW_HEX_COLS
+        sta vr_bufcur
+        lda vr_bufcur+1
+        adc #0
+        sta vr_bufcur+1
+        lda vr_fileoff
+        clc
+        adc #VIEW_HEX_COLS
+        sta vr_fileoff
+        lda vr_fileoff+1
+        adc #0
+        sta vr_fileoff+1
+        ldx vr_rownum
+        inx
+        cpx #(1+VIEW_ROWS)
+        beq vrh_done
+        jmp vrh_row
+vrh_done:
+
+        rts
+
+; =========================================================
+; view_loop: render, read keys, dispatch
+; =========================================================
+
+view_loop:
+
+        jsr view_render
+vl_wait:
+
+        jsr GETIN
+        beq vl_wait
+        cmp #CH_H
+        beq vl_hex
+        cmp #CH_T
+        beq vl_text
+        cmp #K_UP
+        beq vl_up
+        cmp #K_DOWN
+        beq vl_down
+        cmp #K_HOME
+        beq vl_home
+        cmp #CH_Q
+        beq vl_quit
+        cmp #K_STOP
+        beq vl_quit
+        jmp vl_wait
+vl_hex:
+
+        lda #1
+        sta view_mode
+        jsr view_set_mode_params
+        jmp view_loop
+vl_text:
+
+        lda #0
+        sta view_mode
+        jsr view_set_mode_params
+        jmp view_loop
+vl_up:
+
+        jsr view_scroll_up
+        jmp view_loop
+vl_down:
+
+        jsr view_scroll_down
+        jmp view_loop
+vl_home:
+
+        jsr view_home
+        jmp view_loop
+vl_quit:
+
+        rts
+
+; =========================================================
+; view_scroll_down: advance view_top by one row, reload if needed
+; =========================================================
+
+view_scroll_down:
+
+        clc
+        lda view_top
+        adc view_row_size
+        sta view_top
+        lda view_top+1
+        adc #0
+        sta view_top+1
+        ; Check if view_top + screen_size > chunk_base + chunk_len
+        clc
+        lda view_top
+        adc view_screen_size
+        sta vsd_end_lo
+        lda view_top+1
+        adc view_screen_size+1
+        sta vsd_end_hi
+        clc
+        lda view_chunk_base
+        adc view_chunk_len
+        sta vsd_chunkend_lo
+        lda view_chunk_base+1
+        adc view_chunk_len+1
+        sta vsd_chunkend_hi
+        lda vsd_end_hi
+        cmp vsd_chunkend_hi
+        bcc vsd_done
+        bne vsd_need_reload
+        lda vsd_end_lo
+        cmp vsd_chunkend_lo
+        bcc vsd_done
+        lda view_at_eof
+        bne vsd_clamp
+vsd_need_reload:
+
+        lda view_top
+        sta view_chunk_base
+        lda view_top+1
+        sta view_chunk_base+1
+        jsr view_load_chunk
+        rts
+vsd_clamp:
+
+        sec
+        lda view_top
+        sbc view_row_size
+        sta view_top
+        lda view_top+1
+        sbc #0
+        sta view_top+1
+vsd_done:
+
+        rts
+
+; =========================================================
+; view_scroll_up: retreat view_top by one row, reload if needed
+; =========================================================
+
+view_scroll_up:
+
+        lda view_top
+        ora view_top+1
+        beq vsu_done
+        sec
+        lda view_top
+        sbc view_row_size
+        sta view_top
+        lda view_top+1
+        sbc #0
+        sta view_top+1
+        lda view_top+1
+        cmp view_chunk_base+1
+        bcc vsu_reload
+        bne vsu_done
+        lda view_top
+        cmp view_chunk_base
+        bcc vsu_reload
+        rts
+vsu_reload:
+
+        lda view_top
+        sta view_chunk_base
+        lda view_top+1
+        sta view_chunk_base+1
+        jsr view_load_chunk
+vsu_done:
+
+        rts
+
+; =========================================================
+; view_home: jump to start of file
+; =========================================================
+
+view_home:
+
+        lda #0
+        sta view_top
+        sta view_top+1
+        sta view_chunk_base
+        sta view_chunk_base+1
+        jsr view_load_chunk
+        rts
+
+; =========================================================
+; Viewer state and buffers
+; =========================================================
+
+view_mode:       byte 0          ; 0=text, 1=hex
+view_top:        word 0          ; byte offset of visible top
+view_chunk_base: word 0          ; byte offset of chunk start
+view_chunk_len:  word 0          ; bytes loaded in chunk
+view_at_eof:     byte 0          ; nonzero if last read hit EOF
+view_row_size:   byte 0          ; bytes per row (40 or 8)
+view_screen_size: word 0         ; bytes per screen (880 or 176)
+view_fname:      ds 16, 0        ; filename being viewed
+view_fname_len:  byte 0
+view_chunk:      ds VIEW_CHUNK, 0 ; chunk buffer
+
+; Viewer temporaries
+vr_off:          word 0
+vr_bufcur:       word 0
+vr_valid:        byte 0
+vr_rownum:       byte 0
+vr_fileoff:      word 0
+vr_ytmp:         byte 0
+vlc_skl:         byte 0
+vlc_skh:         byte 0
+vsd_end_lo:      byte 0
+vsd_end_hi:      byte 0
+vsd_chunkend_lo: byte 0
+vsd_chunkend_hi: byte 0
+vcv_tmp:         byte 0
+whb_tmp:         byte 0
+bth_tmp:         byte 0
+
+; Viewer strings
+view_title_str:    byte "VIEW: ",0
+view_mode_text_str: byte "TEXT",0
+view_mode_hex_str:  byte "HEX",0
+view_help_str:     byte "T:TEXT H:HEX UP/DN:SCR HOME:TOP Q:QUIT",0
+msg_view_err:      byte "VIEW OPEN FAILED",0
 
 ; =========================================================
 ; Working buffers

@@ -23,7 +23,6 @@ The program is a single 6502 assembly source assembled to a `$0401` PRG and laun
 
 ### Non-Goals
 
-- No file viewer or hex viewer in this version.
 - No Move command. On a single drive, Move equals Rename.
 - No support for two physical drives or for switching panels to different drive numbers.
 - No mouse, no graphics mode, no sound.
@@ -67,12 +66,18 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **FR-M10**: `C` copies the selected file to a new name using a bottom-line text prompt.
 - **FR-M11**: After every DOS command, the drive status channel is read and shown on the bottom row.
 - **FR-M12**: `Q` or RUN/STOP quits to BASIC with the machine left usable.
+- **FR-M13**: `V` opens a modal viewer for the selected file. The viewer shows file content in text or hex display.
+- **FR-M14**: `H` switches the viewer to hexadecimal display; `T` switches back to text display. The current byte offset is preserved across the switch.
+- **FR-M15**: Cursor up/down scrolls the viewer content one row at a time. HOME jumps to the start of the file. Scrolling clamps at the end of the file.
+- **FR-M16**: The viewer loads file data in fixed-size chunks from disk. Scrolling within the chunk does not require disk I/O. Scrolling past the chunk boundary reloads from disk.
 
 ### Should
 
 - **FR-S1**: Text prompts accept up to 16 PETSCII characters, support DEL backspacing, commit on RETURN, and cancel on RUN/STOP.
 - **FR-S2**: Delete confirmation treats RETURN as yes and any other key as cancel.
 - **FR-S3**: A drive-not-ready or directory-open failure shows a readable status message instead of hanging.
+- **FR-S4**: The viewer opens the file for sequential reading and closes it on every exit path, including open failure, read failure, and user cancellation.
+- **FR-S5**: The viewer restores the panel display on close, leaving panel state unchanged.
 
 ### Could
 
@@ -81,9 +86,11 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 
 ### Won't
 
-- **FR-W1**: No file viewer in this version.
+- **FR-W1**: No file editing in the viewer; it is read-only.
 - **FR-W2**: No second physical drive or per-panel drive selection in this version.
 - **FR-W3**: No Move command in this version.
+- **FR-W4**: No search or goto-offset in the viewer.
+- **FR-W5**: No line-wrap in the viewer text mode; long lines are clipped to the viewer width.
 
 ## Non-Functional Requirements
 
@@ -101,6 +108,7 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **UC-3 Rename a file**: The user selects a file, presses `N`, types a new name, and presses RETURN. The program issues the DOS rename, reloads the panel, and shows status.
 - **UC-4 Copy a file**: The user selects a file, presses `C`, types a destination name, and presses RETURN. The program issues the DOS copy, reloads the panel, and shows status.
 - **UC-5 Quit cleanly**: The user presses `Q`. The program restores borrowed zero page and returns to BASIC with `READY.`
+- **UC-6 View a file**: The user selects a file and presses `V`. The viewer opens showing the start of the file in text mode. The user presses `H` to switch to hex, scrolls with cursor keys, presses `T` to return to text, and presses `Q` to close. The panels reappear unchanged.
 
 ## Quality Targets
 
@@ -120,5 +128,5 @@ Authoritative coding rules live in `standard/asm-6502-development.md`. Summary:
 
 ## Current State
 
-- **Completed**: Directory listing, two-panel navigation, delete, rename, copy, DOS status reporting, clean BASIC exit.
-- **Known limitations**: Both panels pinned to drive 8, no viewer, no Move, max 64 entries, 12-character name column. See `SPECIFICATION.md` "Known Limitations".
+- **Completed**: Directory listing, two-panel navigation, delete, rename, copy, file viewer with text and hex modes, DOS status reporting, clean BASIC exit.
+- **Known limitations**: Both panels pinned to drive 8, no Move, max 64 entries, 12-character name column, viewer is read-only with no search or line-wrap. See `SPECIFICATION.md` "Known Limitations".

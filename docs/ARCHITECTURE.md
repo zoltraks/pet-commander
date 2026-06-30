@@ -42,13 +42,15 @@ Each module is a labelled section of `src/commander.asm`. Responsibilities are k
 | File operations      | `op_delete`, `op_rename`, `op_copy`, `op_cancel`   | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.     |
 | DOS channel          | `send_dos_cmd`, `read_dos_status`     | Send a command on channel 15 and read back the status string.   |
 | Prompts              | `prompt_text`, `prompt_yn`, `draw_prompt_label`, `show_prompt_buf` | Bottom-line text entry and yes/no confirmation.                 |
-| Data buffers         | `entries_p0`, `entries_p1`, `cmd_buf`, `prompt_buf`, `savename`, `status_buf` | Per-panel entry tables and scratch buffers.                     |
+| Viewer               | `op_view`, `view_load_chunk`, `view_render`, `view_loop`, `view_scroll_down`, `view_scroll_up`, `view_home`, `byte_to_hex` | Modal file viewer with text and hex display, chunk-based partial load, scrolling. |
+| Data buffers         | `entries_p0`, `entries_p1`, `cmd_buf`, `prompt_buf`, `savename`, `status_buf`, `view_chunk` | Per-panel entry tables, scratch buffers, and the viewer chunk buffer.                     |
 
 What modules must not do:
 
 - Navigation must not perform I/O. It only mutates selection and scroll state, then asks the drawing module to redraw.
 - Drawing must not change panel data. It reads state and renders; it never loads or mutates entries.
 - File operations must not draw directly. They issue DOS commands and reload, then a redraw is triggered.
+- The viewer is a modal overlay. It must not mutate panel state. It reads the selected entry name, opens the file, renders to screen RAM, and restores the panels on close via `full_redraw`.
 
 ## State Domains
 
@@ -59,6 +61,8 @@ State is separated into three domains.
 - **Entry data**: two fixed entry tables `entries_p0` and `entries_p1`, each `MAX_ENTRY * ENT_SIZE` bytes. One table per panel.
 
 Scratch buffers (`cmd_buf`, `prompt_buf`, `savename`, `status_buf`) are transient and owned by whichever operation is running.
+
+The viewer owns its own state domain: `view_mode`, `view_top`, `view_chunk_base`, `view_chunk_len`, `view_at_eof`, `view_fname`, and the `view_chunk` buffer. This state is separate from panel state and is discarded on viewer close.
 
 ## Data Flow
 
@@ -91,6 +95,7 @@ Navigation skips the DOS stages: a cursor key updates `p_sel` / `p_top` and trig
 | Program load      | `$0401`           | PRG load address. BASIC stub, then code and data.         |
 | Screen RAM        | `$8000`           | 40x25 = 1000 screen-code bytes.                           |
 | Entry tables      | within program    | `entries_p0`, `entries_p1` at the tail of the binary.     |
+| Viewer chunk      | within program    | `view_chunk` (2048 bytes) at the tail of the binary.      |
 
 The program borrows zero-page bytes `$FB`-`$FE` (KERNAL tape pointers, safe while tape is idle). Their original values are saved in `saved_fb`..`saved_fe` at start and restored at exit.
 
@@ -98,8 +103,8 @@ The program borrows zero-page bytes `$FB`-`$FE` (KERNAL tape pointers, safe whil
 
 - The **main loop** is the only place that reads the keyboard. It owns control flow.
 - **Handlers** are leaf operations invoked by the dispatcher. They return to the loop.
-- The **directory loader** and **DOS channel** are the only modules that perform IEEE-488 I/O.
-- The **drawing module** is the only writer of screen RAM.
+- The **directory loader**, **DOS channel**, and **viewer** are the only modules that perform IEEE-488 I/O.
+- The **drawing module** and the **viewer render** are the only writers of screen RAM.
 
 This keeps I/O and rendering on separate, auditable seams.
 
@@ -130,17 +135,24 @@ This keeps I/O and rendering on separate, auditable seams.
   - **Rationale**: VICE Inject mode does not reliably set BASIC pointers for a `$0401` PRG, producing `?SYNTAX ERROR IN 10`. Disk autostart uses BASIC's real LOAD path, which sets every pointer correctly and leaves the disk mounted on drive 8.
   - **Trade-off**: The build must refresh the copy of the program inside the D64. Handled by `build.sh` and `example/build-work-d64.sh`.
 
+- **AD-6 Viewer as modal overlay with chunk-based partial load**
+  - **Decision**: The viewer is a modal overlay that covers the panels, owns its own state and chunk buffer, and restores the panels via `full_redraw` on close. File data is loaded in fixed-size chunks (`VIEW_CHUNK` = 2048 bytes) from a sequential read channel.
+  - **Rationale**: A modal overlay avoids mutating panel state. Chunk-based loading keeps memory bounded (one 2 KB buffer) while allowing scrolling within a chunk without disk I/O. CBM-DOS sequential files have no backward seek, so scrolling up past the chunk re-opens and skips forward.
+  - **Trade-off**: Upward scroll past the chunk boundary is expensive (byte-by-byte skip from file start). The chunk is larger than one screenful (880 bytes for text, 176 for hex) so most scrolling stays within the chunk.
+
 ## Error Handling
 
 - **Directory open failure**: `load_panel` shows `DRIVE NOT READY` instead of hanging.
 - **DOS command errors**: surfaced as the raw status string read from channel 15 (e.g. `63,FILE EXISTS,00,00`).
 - **Status read failure**: `read_dos_status` falls back to `STATUS READ FAILED`.
 - **User cancellation**: prompts and the delete confirmation cancel cleanly on RUN/STOP or a non-yes key, leaving state unchanged.
+- **Viewer open failure**: `op_view` shows `VIEW OPEN FAILED` on the status row and returns to the panels without opening the viewer.
+- **Viewer read failure**: EOF and read errors during chunk loading set the `view_at_eof` flag; the viewer renders available bytes and pads the rest with spaces.
 
 ## Extensibility
 
 - **Per-panel drive selection**: `p_drive` is already a per-panel array. A future change can let a key change a panel's drive number and reload, without touching the rendering seam.
-- **File viewer**: a new handler in `dispatch_key` plus a draw routine; the entry record already carries enough to open the file.
+- **Viewer search or goto-offset**: a new handler in `view_loop` that adjusts `view_top` and reloads the chunk; the chunk infrastructure already supports arbitrary offsets.
 - **More entries**: raising `MAX_ENTRY` is a constants change plus a check that the entry tables still fit in RAM.
 
 These seams are why navigation, drawing, and I/O are kept apart.

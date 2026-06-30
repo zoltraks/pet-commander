@@ -73,7 +73,10 @@ Automated line coverage is not applicable to this target. The qualitative target
 
 - Every keyboard binding in `SPECIFICATION.md` is exercised at least once during manual behaviour checks for a release.
 - Every DOS operation (delete, rename, copy) is exercised against the fixture and shows a status line.
-- The error paths (`DRIVE NOT READY`, `STATUS READ FAILED`, `FILE EXISTS`) are reproduced at least once when their code is touched.
+- Every viewer key (`V`, `H`, `T`, cursor up/down, HOME, `Q`, RUN/STOP) is exercised at least once against a PRG and a SEQ file on the fixture.
+- The viewer open-failure path (`VIEW OPEN FAILED`) is reproduced at least once.
+- The viewer restores the panels on close; after closing, the panel state (selection, scroll, active panel) is unchanged.
+- The error paths (`DRIVE NOT READY`, `STATUS READ FAILED`, `FILE EXISTS`, `VIEW OPEN FAILED`) are reproduced at least once when their code is touched.
 
 ## CI Configuration
 

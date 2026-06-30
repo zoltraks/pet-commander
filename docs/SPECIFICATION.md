@@ -51,6 +51,23 @@ Two-element parallel arrays, index 0 = left, 1 = right. Defined near the top of 
 | `savename`   | 16 bytes | Saved source name for ops.    |
 | `status_buf` | 41 bytes | Drive status string to show.  |
 
+### Viewer state
+
+Owned by the viewer module. Separate from panel state. Discarded on viewer close.
+
+| Symbol             | Size     | Meaning                                              |
+| ------------------ | -------- | ---------------------------------------------------- |
+| `view_mode`        | 1 byte   | `0` = text display, `1` = hex display.               |
+| `view_top`         | 2 bytes  | Byte offset of the top-left visible byte.            |
+| `view_chunk_base`  | 2 bytes  | Byte offset of the first byte in the chunk buffer.   |
+| `view_chunk_len`   | 2 bytes  | Number of valid bytes in the chunk buffer.           |
+| `view_at_eof`      | 1 byte   | Nonzero if the last chunk read reached end of file.  |
+| `view_row_size`    | 1 byte   | Bytes per visible row (`VIEW_TEXT_COLS` or `VIEW_HEX_COLS`). |
+| `view_screen_size` | 2 bytes  | Total bytes per screen (`VIEW_ROWS * view_row_size`). |
+| `view_fname`       | 16 bytes | Copy of the file name being viewed.                  |
+| `view_fname_len`   | 1 byte   | Length of the file name in `view_fname`.             |
+| `view_chunk`       | 2048 bytes | Chunk buffer for partial file loading.             |
+
 ## Constants
 
 These values must not be hard-coded ad hoc elsewhere. They are defined once at the top of `src/commander.asm`.
@@ -63,6 +80,11 @@ These values must not be hard-coded ad hoc elsewhere. They are defined once at t
 | `PANEL_INNER`| `18`    | Inner content columns (excluding frame borders). |
 | `MAX_ENTRY`  | `64`    | Maximum entries per panel.                       |
 | `ENT_SIZE`   | `20`    | Bytes per entry record.                          |
+| `VIEW_ROWS`  | `22`    | Visible content rows in the viewer.              |
+| `VIEW_TEXT_COLS` | `40` | Columns per text-mode row in the viewer.       |
+| `VIEW_HEX_COLS`  | `8`  | Bytes per hex-mode row in the viewer.           |
+| `VIEW_CHUNK` | `2048`  | Chunk buffer size for partial file loading.      |
+| `VIEW_LFN`   | `3`     | Logical file number used by the viewer.          |
 | `sp_lo/hi`   | `$FB/$FC` | Borrowed primary indirect pointer.             |
 | `dp_lo/hi`   | `$FD/$FE` | Borrowed secondary indirect pointer.           |
 
@@ -110,6 +132,31 @@ Navigation keeps the selected index inside the visible window of `PANEL_ROWS` ro
 
 `row_addr_sp` computes the screen-RAM address of a given text row into the `sp` pointer so draw routines can write a row without recomputing `row*40 + $8000` inline.
 
+### Viewer chunk loading
+
+`view_load_chunk` opens the file named in `view_fname` on the active panel's drive using `pet_setnam`/`pet_setlfs` (LFN = `VIEW_LFN`, SA = 0), calls `CHKIN`, skips `view_chunk_base` bytes by repeated `CHRIN`, then reads up to `VIEW_CHUNK` bytes into `view_chunk` via `CHRIN`, checking `STATUS` after each byte. It sets `view_chunk_len` to the count read and `view_at_eof` if `STATUS` became non-zero before `VIEW_CHUNK` bytes. It then calls `CLRCHN` and `pet_close`. The file is closed on every call, so no channel stays open between renders.
+
+### Viewer scrolling
+
+The chunk buffer covers `VIEW_CHUNK` (2048) bytes starting at `view_chunk_base`. The visible window starts at `view_top` and spans `view_screen_size` bytes. Scrolling within the chunk (the common case) requires no disk I/O.
+
+- `view_scroll_down` adds `view_row_size` to `view_top`. If the window extends past the chunk and the file is not at EOF, it reloads the chunk at the new `view_top`. If at EOF, it clamps `view_top` back.
+- `view_scroll_up` subtracts `view_row_size` from `view_top`, clamped at 0. If `view_top` falls below `view_chunk_base`, it reloads the chunk at the new `view_top`.
+- `view_home` sets `view_top` and `view_chunk_base` to 0 and reloads.
+
+Because CBM-DOS sequential files have no backward seek, scrolling up past the chunk re-opens the file and skips forward byte-by-byte. This is the documented trade-off for chunk-based loading.
+
+### Viewer rendering
+
+`view_render` clears the screen, draws a title bar on row 0 showing the file name and current mode, renders `VIEW_ROWS` content rows (rows 1-22), and draws a help bar on row 24.
+
+- **Text mode**: each row renders `VIEW_TEXT_COLS` (40) bytes from the chunk buffer, converting each byte with `petscii_to_screen`. Bytes below `$20` or at/above `$7F` render as a dot placeholder. Bytes past the chunk or EOF render as spaces.
+- **Hex mode**: each row shows a 4-digit hex offset, 8 hex byte pairs (via `byte_to_hex`), and 8 ASCII characters (dot for non-printable). Bytes past the chunk or EOF render as spaces.
+
+### Byte to hex
+
+`byte_to_hex` converts a byte in A to two hex-digit screen codes: A = high nibble, Y = low nibble. `nibble_to_sc` maps 0-9 to `$30`-`$39` and 10-15 to `$01`-`$06` (screen codes for `A`-`F`).
+
 ## Keyboard and Input Bindings
 
 Keys are read with `GETIN` and compared against PETSCII constants. Bindings:
@@ -129,10 +176,15 @@ Keys are read with `GETIN` and compared against PETSCII constants. Bindings:
 | `C`            | `CH_C $43` | Copy the selected file.                 |
 | `Q`            | `CH_Q $51` | Quit to BASIC.                          |
 | `Y`            | `CH_Y $59` | Confirm in the delete prompt.           |
+| `V`            | `CH_V $56` | Open the viewer on the selected file.   |
+| `H`            | `CH_H $48` | Switch the viewer to hex display.       |
+| `T`            | `CH_T $54` | Switch the viewer to text display.      |
 
 Text prompts (`prompt_text`): accept up to 16 PETSCII characters into `prompt_buf`, DEL backspaces, RETURN commits, RUN/STOP cancels.
 
 Yes/no prompt (`prompt_yn`): RETURN or `Y` confirms; any other key cancels.
+
+Viewer keys (`view_loop`): `H` switches to hex, `T` to text, cursor up/down scroll, HOME jumps to top, `Q`/RUN/STOP closes the viewer. The viewer reads keys with `GETIN` from the keyboard (default input after `CLRCHN`).
 
 ## DOS Command Construction
 
@@ -158,6 +210,7 @@ Errors are surfaced as on-screen messages, never as silent failures.
 | Delete prompt              | `DELETE? Y/N`          | `msg_confirm_del` |
 | Rename prompt label        | `NEW NAME`             | `msg_new_name`    |
 | Copy prompt label          | `COPY TO`              | `msg_copy_to`     |
+| Viewer open failed         | `VIEW OPEN FAILED`     | `msg_view_err`    |
 
 The status string is the drive's own channel-15 response, e.g. `00,OK,00,00`, `01,FILES SCRATCHED,01,00`, or `63,FILE EXISTS,00,00`.
 
@@ -178,8 +231,9 @@ The status string is the drive's own channel-15 response, e.g. `00,OK,00,00`, `0
 ## Known Limitations
 
 - Both panels are pinned to drive 8 (FR-W2).
-- No file viewer; the `V` key is unimplemented (FR-W1).
 - No Move command; on a single drive Move equals Rename (FR-W3).
+- The viewer is read-only; no editing, search, or goto-offset (FR-W1, FR-W4).
+- No line-wrap in the viewer text mode; long lines are clipped to `VIEW_TEXT_COLS` (FR-W5).
 - Maximum 64 entries per panel (`MAX_ENTRY`).
 - The name column shows up to 12 characters; the full 16-character name is kept internally for DOS commands.
 - ROM entry-point addresses are PET-3032-specific.
