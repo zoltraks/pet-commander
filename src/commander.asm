@@ -13,6 +13,13 @@
 ; exit, so BASIC remains usable after Q / RUN-STOP.
 ; =========================================================
 
+; ---- Version --------------------------------------------
+; Two-number scheme MAJOR.MINOR. MINOR runs 0-9; the next
+; increment past 9 rolls MAJOR over and resets MINOR to 0
+; (0.9 -> 1.0, 9.9 -> 10.0). See docs/VERSIONING.md.
+VERSION_MAJOR = 0
+VERSION_MINOR = 1
+
 ; ---- KERNAL routines ----------------------------------
 ; PET 3032 KERNAL jump table entries.  Note: the PET does NOT
 ; have SETNAM ($FFBD) or SETLFS ($FFBA) -- those are C64-only.

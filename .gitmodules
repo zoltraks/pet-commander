@@ -1,0 +1,3 @@
+[submodule "docs/skill/commodore-pet-skill"]
+	path = docs/skill/commodore-pet-skill
+	url = https://github.com/zoltraks/commodore-pet-skill

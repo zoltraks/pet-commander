@@ -17,6 +17,28 @@ A two-panel file manager for the Commodore PET 3032, in the spirit of Norton Com
 
 Both panels show drive 8 on startup.
 
+## Cloning this repository
+
+This repository uses a git submodule at `docs/skill/commodore-pet-skill` for the companion [commodore-pet-skill](https://github.com/zoltraks/commodore-pet-skill) reference material (DASM and VICE notes).
+
+Clone with the submodule included:
+
+```
+git clone --recurse-submodules <repo-url>
+```
+
+If you already cloned without `--recurse-submodules`, initialise and fetch it afterwards:
+
+```
+git submodule update --init --recursive
+```
+
+To update `docs/skill/commodore-pet-skill` to the latest upstream commit later:
+
+```
+git submodule update --remote docs/skill/commodore-pet-skill
+```
+
 ## Commands
 
 | Key            | Action                              |
@@ -42,7 +64,7 @@ After every DOS command the drive status is shown on the bottom row (e.g. `00,OK
 ./build.sh
 ```
 
-Uses the `dasm` Docker image if available, otherwise falls back to a local `dasm` binary in `PATH` (see `utility/dasm-assembler.md` in the commodore-pet-skill for setup).
+Uses the `dasm` Docker image if available, otherwise falls back to a local `dasm` binary in `PATH` (see `docs/skill/commodore-pet-skill/utility/dasm-assembler.md` for setup).
 
 Output: `build/commander.prg`. PRG header carries load address `$0401`, so VICE inject-mode autostart works as-is.
 
@@ -61,7 +83,7 @@ VICE has three autostart modes for a standalone PRG file: VirtualFS, Inject, and
 
 The robust path is to embed the PRG inside the D64 and let VICE autostart the disk: VICE issues `LOAD"*",8` followed by `RUN` through BASIC's real LOAD routine, which sets every pointer correctly. As a bonus, the same disk stays mounted as drive 8 for the program to read.
 
-`run.sh` checks that `xpet` is available in `PATH`. VICE 3.7+ finds ROMs automatically from the bindist directory (Windows) or system/user paths (Linux) -- no manual ROM setup is needed with a standard install. See `utility/vice-emulator.md` in the commodore-pet-skill for ROM setup details if needed.
+`run.sh` checks that `xpet` is available in `PATH`. VICE 3.7+ finds ROMs automatically from the bindist directory (Windows) or system/user paths (Linux) -- no manual ROM setup is needed with a standard install. See `docs/skill/commodore-pet-skill/utility/vice-emulator.md` for ROM setup details if needed.
 
 The underlying invocation is:
 
@@ -104,3 +126,34 @@ The program runs from `$0401` (BASIC stub `10 SYS1038`) and falls back to BASIC 
 - No Move command; on a single drive Move would be Rename, and the dest panel always shows drive 8 anyway.
 - Maximum 64 entries per panel.
 - Filename column shows up to 12 chars (full name kept internally for DOS commands).
+
+## Project Rules
+
+- When working on the project, always adhere to the rules listed in the `docs/GUIDELINES.md` file.
+- Project documentation is located in the `docs/` directory. Read the active set in the order defined in `docs/GUIDELINES.md` ("Sources of Truth") before making any change.
+
+This section is the entry point for any AI coding agent working on this repository, not just one specific tool. The authoritative rules live in `docs/GUIDELINES.md` and the active documentation set it lists.
+
+### Read Before Any Change
+
+Read the full active set, in this order, before making any change. Never assume a subset is enough.
+
+1. `README.md` (this file)
+2. `docs/GUIDELINES.md` (and its Sources of Truth list)
+3. `docs/PROJECT.md`, `docs/ARCHITECTURE.md`, `docs/SPECIFICATION.md`
+4. `docs/TESTING.md`, `docs/WORKFLOW.md`, `docs/REFACTORING.md`, `docs/VERSIONING.md`
+5. `docs/COPYRIGHTS.md`, `docs/DEPLOYMENT.md`, `docs/IGNORE.md`, `docs/REFERENCES.md`
+6. `docs/standard/asm-6502-development.md` before writing any code
+
+### Key Rules
+
+- **Documentation first**: update the relevant docs before changing `src/commander.asm`.
+- **Verification loop**: after every code change, assemble with `./build.sh` (expect `Complete. (0)`), confirm the PRG loads at `$0401`, and smoke-run under `xpet -warp`. See `docs/TESTING.md`.
+- **Output stability**: keep load address `$0401` and the `SYS 1038` -> `jmp start` entry intact.
+- **Preserve CRLF line endings and ASCII encoding. Do not change version numbers unless instructed.**
+- **Restricted directories**: do not read `docs/change/`, `docs/plan/`, `docs/refactoring/`, `docs/report/`, `docs/archive/`, `docs/reference/`, or `docs/skill/` automatically. See `docs/IGNORE.md`.
+- **Model or session change**: repeat the pre-work self-check and re-read the active set.
+
+### Workflow
+
+For non-trivial changes, follow the version-based cycle in `docs/WORKFLOW.md`: change request, then implementation plan, then confirm before implementing. The current version is `VERSION_MAJOR`/`VERSION_MINOR` in `src/commander.asm`. See `docs/VERSIONING.md`.
