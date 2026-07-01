@@ -12,7 +12,7 @@ A two-panel file manager for the Commodore PET 3032, in the spirit of Norton Com
  |   5 ANOTHER     S  |  ...               |
  |  ...               |                    |
  +--------------------+--------------------+
- TAB-Sw N-Ren C-Cpy D-Del L-Lod Q-Quit
+ TAB-Sw N-Ren C-Cpy D-Del V-Vie L-Lod Q-Quit
 ```
 
 Both panels show drive 8 on startup.
@@ -50,6 +50,7 @@ git submodule update --remote docs/skill/commodore-pet-skill
 | D              | Delete (scratch) the selected file   |
 | N              | Rename the selected file             |
 | C              | Copy the selected file to a new name |
+| V              | Open a viewer for the selected file  |
 | Q or RUN/STOP  | Quit back to BASIC                   |
 
 For Delete, the program asks `Y/N`. RETURN counts as yes; any other key cancels.
@@ -57,6 +58,20 @@ For Delete, the program asks `Y/N`. RETURN counts as yes; any other key cancels.
 For Rename and Copy, a prompt appears on the bottom line. Type up to 16 PETSCII chars; DEL backspaces; RETURN commits; RUN/STOP cancels.
 
 After every DOS command the drive status is shown on the bottom row (e.g. `00,OK,00,00` or `63,FILE EXISTS,00,00`).
+
+### Viewer keys
+
+The viewer is a modal overlay that covers the panels. It opens in text mode showing the start of the file.
+
+| Key            | Action                                  |
+|----------------|-----------------------------------------|
+| T              | Text display (default)                  |
+| H              | Hexadecimal display                     |
+| Cursor up/down | Scroll one row                          |
+| HOME           | Jump to the start of the file           |
+| Q or RUN/STOP  | Close the viewer and restore the panels |
+
+The viewer loads file data in fixed-size chunks from disk. Scrolling within a chunk needs no disk I/O; scrolling past the chunk boundary reloads from disk. The current byte offset is preserved when switching between text and hex. On close, the panels reappear unchanged.
 
 ## Building
 
@@ -95,7 +110,7 @@ For a native PET D80 image use `-drive8type 8050`.
 
 ## Verified
 
-- Clean DASM assembly (`Complete. (0)`), output size ~5.5 KB.
+- Clean DASM assembly (`Complete. (0)`), output size ~8.7 KB.
 - PRG header carries load address `$0401`; `SYS 1038` ($040E) lands on a `JMP start` instruction.
 - Runs for >100M cycles in `xpet -warp` with a real D64 mounted on drive 8 without crashing or runaway memory writes.
 
@@ -115,15 +130,17 @@ Full visual verification requires a graphical xpet session.
 - `op_delete`, `op_rename`, `op_copy`
 - `send_dos_cmd`, `read_dos_status`
 - `prompt_text`, `prompt_yn`
-- Entry table buffers
+- Viewer (`op_view`, `view_load_chunk`, `view_render`, `view_loop`, scrolling, `byte_to_hex`)
+- Entry table buffers and the viewer chunk buffer
 
 The program runs from `$0401` (BASIC stub `10 SYS1038`) and falls back to BASIC on Q / RUN/STOP.
 
 ## Known limitations (this revision)
 
 - Both panels are pinned to drive 8.
-- No file viewer (V key not implemented).
 - No Move command; on a single drive Move would be Rename, and the dest panel always shows drive 8 anyway.
+- The viewer is read-only: no editing, no search, and no goto-offset.
+- No line-wrap in the viewer text mode; long lines are clipped to the viewer width.
 - Maximum 64 entries per panel.
 - Filename column shows up to 12 chars (full name kept internally for DOS commands).
 

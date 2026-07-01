@@ -28,7 +28,7 @@ The DASM run must finish with `Complete. (0)` and no errors.
 **Header and size check**
 
 Confirm the first two bytes of `build/commander.prg` are `01 04` (load address `$0401`).
-Confirm the build size is in the expected range (about 5.5 KB for the current feature set). A large unexpected change in size is a signal to investigate.
+Confirm the build size is in the expected range (about 8.7 KB for the current feature set, which includes the viewer and its 2 KB chunk buffer). A large unexpected change in size is a signal to investigate.
 
 **Smoke run**
 
