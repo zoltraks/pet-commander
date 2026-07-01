@@ -6,7 +6,7 @@
 
 This document records what is specific to PET Commander: project structure, the build and test workflow, project conventions, and the few places where this project deliberately overrides the general standard.
 
-General 6502, DASM, and PET conventions -- naming, formatting, comments, section banners, zero-page discipline, flag semantics, KERNAL and hardware facts -- are defined by the commodore-pet-skill, which is the source of truth for this project and is not repeated here. Consult the relevant `docs/skill/commodore-pet-skill/` sections before writing or modifying code. Where a rule in this file conflicts with that general standard, the rule in this file wins for PET Commander code.
+General 6502, DASM, and PET conventions -- naming, formatting, comments, section banners, zero-page discipline, flag semantics, KERNAL and hardware facts -- are defined by the commodore-pet-skill, which is the source of truth for this project and is not repeated here. Consult the relevant `docs/skill/commodore-pet-skill/` sections before code analysis, implementation planning, and any code writing or modification, including document-only changes that describe code or implementation behaviour. Where a rule in this file conflicts with that general standard, the rule in this file wins for PET Commander code.
 
 PET Commander is a single-source DASM program targeting the Commodore PET 3032. Hardware specs, PRG format, and load address conventions are defined by the skill.
 

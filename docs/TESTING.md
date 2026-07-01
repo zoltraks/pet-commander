@@ -85,6 +85,7 @@ Automated line coverage is not applicable to this target. The qualitative target
 - Viewer state persistence: set `A` + `L`, close with `E`, reopen with `V` on another file; the viewer starts in ASCII + LOWER mode with the offset reset to zero. Set `S` + `U`, close, reopen; it starts in SCREEN + UPPER.
 - The error paths (`DRIVE NOT READY`, `STATUS READ FAILED`, `FILE EXISTS`, `VIEW OPEN FAILED`) are reproduced at least once when their code is touched.
 - Double-buffered rendering: navigation (cursor up/down, TAB switch, `L` reload), viewer scrolling, and prompt input (`N`, `C`, `D` confirmation) are all flicker-free; each frame appears complete with no partial-update window.
+- Character-set switch synchronization: pressing `L` or `U` in the viewer transitions to the new character set with no flash -- the new content and the new character set appear together in one frame. Opening the viewer with a persisted LOWER charset shows no panel flash in the lowercase set on entry. Closing the viewer with `E` shows no viewer-frame flash in the uppercase set on exit.
 - Clean BASIC exit after double buffering: after `Q`, `READY.` appears, then `PRINT FRE(0)` and a string assignment (`A$="TEST"`) succeed, confirming the `$7C00` back-buffer region did not corrupt BASIC RAM and no IRQ vector was left installed.
 
 ## CI Configuration

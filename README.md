@@ -168,8 +168,8 @@ Read the full active set, in this order, before making any change. Never assume 
 3. `docs/PROJECT.md`, `docs/ARCHITECTURE.md`, `docs/SPECIFICATION.md`
 4. `docs/TESTING.md`, `docs/WORKFLOW.md`, `docs/REFACTORING.md`, `docs/VERSIONING.md`
 5. `docs/COPYRIGHTS.md`, `docs/DEPLOYMENT.md`, `docs/IGNORE.md`, `docs/REFERENCES.md`
-6. `docs/standard/asm-6502-development.md` before writing any code
-7. `docs/skill/commodore-pet-skill/` relevant sections before writing any code
+6. `docs/standard/asm-6502-development.md` before code analysis and any code writing
+7. `docs/skill/commodore-pet-skill/` relevant sections before code analysis and any code writing
 
 ### Key Rules
 
@@ -177,7 +177,7 @@ Read the full active set, in this order, before making any change. Never assume 
 - **Verification loop**: after every code change, assemble with `./build.sh` (expect `Complete. (0)`), confirm the PRG loads at `$0401`, and smoke-run under `xpet -warp`. See `docs/TESTING.md`.
 - **Output stability**: keep load address `$0401` and the `SYS 1038` -> `jmp start` entry intact.
 - **Preserve CRLF line endings and ASCII encoding. Do not change version numbers unless instructed.**
-- **Use the commodore-pet-skill**: consult `docs/skill/commodore-pet-skill/` for PET 3032 hardware, KERNAL, DASM, and VICE details when writing or modifying code.
+- **Use the commodore-pet-skill**: consult `docs/skill/commodore-pet-skill/` for PET 3032 hardware, KERNAL, DASM, and VICE details before code analysis, implementation planning, and any code writing or modification, including document-only changes that describe code or implementation behaviour.
 - **Restricted directories**: do not read `docs/change/`, `docs/plan/`, `docs/refactoring/`, `docs/report/`, `docs/archive/`, or `docs/reference/` automatically. See `docs/IGNORE.md`.
 - **Model or session change**: repeat the pre-work self-check and re-read the active set.
 

@@ -21,8 +21,8 @@ These guidelines govern AI-assisted and human development of PET Commander.
   - `IGNORE.md`: Files and directories AI must not modify or treat as authoritative.
   - `REFERENCES.md`: External hardware, KERNAL, and tooling references.
 
-- **Engineering Standard**: `standard/asm-6502-development.md` is authoritative for how 6502 assembly is written in this project. Read it before writing or modifying any code.
-- **Commodore PET Skill**: The `docs/skill/commodore-pet-skill/` submodule is the source of truth for PET 3032 hardware facts, KERNAL routines, DASM syntax, and VICE usage. Consult the relevant sections before writing or modifying any code.
+- **Engineering Standard**: `standard/asm-6502-development.md` is authoritative for how 6502 assembly is written in this project. Read it before code analysis, implementation planning, and any code writing or modification.
+- **Commodore PET Skill**: The `docs/skill/commodore-pet-skill/` submodule is the source of truth for PET 3032 hardware facts, KERNAL routines, DASM syntax, and VICE usage. Consult the relevant sections before code analysis, implementation planning, and any code writing or modification. The skill must be read before analysing the affected code or drafting any document that describes code or implementation behaviour (change request, plan, proposal), not deferred to the code-writing step. Document-only changes related to code are not exempt.
 
 - **Output Stability**: The assembled `build/commander.prg` must keep load address `$0401` and a working `SYS 1038` entry. This is a non-negotiable constraint recorded in `SPECIFICATION.md` and `REFACTORING.md`.
 
@@ -42,7 +42,7 @@ Never assume a subset is sufficient, no matter how small the change.
 - `README.md`: Locate the guidelines directory and entry point.
 - `GUIDELINES.md`: Understand all rules and the Sources of Truth list.
 - All files referenced in Sources of Truth.
-- `standard/asm-6502-development.md` before writing any code.
+- `standard/asm-6502-development.md` before code analysis and any code writing.
 
 ## General Workflow
 
@@ -116,7 +116,7 @@ This applies to every code modification regardless of size.
 
 - Treat files and directories listed in `IGNORE.md` as excluded from analysis unless explicitly instructed.
 - Do not read from `change/`, `plan/`, `refactoring/`, `report/`, `archive/`, or `reference/` automatically. Read them only when the relevant work requires it or the user requests it.
-- `docs/skill/` is the natural location for skills used in this project. It is not restricted from reading. Consult the relevant sections before writing or modifying code. The `commodore-pet-skill` submodule may be edited directly in this repository; the user commits inside the submodule and synchronizes the pointer.
+- `docs/skill/` is the natural location for skills used in this project. It is not restricted from reading. Consult the relevant sections before code analysis, implementation planning, and any code writing or modification, including document-only changes that describe code or implementation behaviour. The `commodore-pet-skill` submodule may be edited directly in this repository; the user commits inside the submodule and synchronizes the pointer.
 - `build/` and `example/work.d64` are generated artifacts. They are not authoritative ground truth.
 
 ## Memorization Convention

@@ -60,8 +60,10 @@ Owned by the viewer module. Separate from panel state. `view_mode`, `view_charse
 | `view_mode`        | 1 byte   | `0` = text display, `1` = hex display. Persisted.    |
 | `view_charset_mode`| 1 byte   | `0` = SCREEN (raw screen codes), `1` = ASCII (translate). Persisted. |
 | `view_charset`     | 1 byte   | `0` = UPPER, `1` = LOWER. Persisted.                 |
-| `view_char_offset` | 1 byte   | `$00` when UPPER, `$40` when LOWER. ORed into label letter screen codes so labels render uppercase in either set. |
+| `view_char_offset` | 1 byte   | `$00` when UPPER, `$40` when LOWER. ORed into label letter screen codes so labels render uppercase in either set. Set immediately when the charset flag changes, so label rendering into `BUFFER` composes correctly before the PCR write is flushed. |
 | `saved_pcr_cs`     | 1 byte   | PCR bits 3:1 saved on viewer entry, restored on exit. |
+| `view_pcr_pending` | 1 byte   | Nonzero when a PCR charset write is staged but not yet applied. Reset to `0` on each viewer open and after each flush. |
+| `view_pending_pcr_cs` | 1 byte | Staged PCR bits 3:1 to OR into PCR during the VBLANK flush. |
 | `view_top`         | 2 bytes  | Byte offset of the top-left visible byte.            |
 | `view_chunk_base`  | 2 bytes  | Byte offset of the first byte in the chunk buffer.   |
 | `view_chunk_len`   | 2 bytes  | Number of valid bytes in the chunk buffer.           |
@@ -145,9 +147,10 @@ Navigation keeps the selected index inside the visible window of `PANEL_ROWS` ro
 
 ### Present and blit
 
-`present_screen` is called at the end of every redraw entry point and after every interactive row-24 update. It waits for VBLANK then copies the back buffer to screen RAM in one atomic pass.
+`present_screen` is called at the end of every redraw entry point and after every interactive row-24 update. It waits for VBLANK, flushes any staged PCR charset write, then copies the back buffer to screen RAM in one atomic pass. The PCR flush and the content blit share the same VBLANK window so a character-set switch and its new content appear together with no partial-update window.
 
 - `wait_vblank` polls VIA PORT B bit 5 (`$E840` bit 5). The signal is LOW during VBLANK and HIGH during active display. A bounded two-phase wait syncs to the start of VBLANK: phase 1 skips any remaining VBLANK (wait while LOW), phase 2 waits for active display to end (wait while HIGH). Each phase is bounded to 256 iterations so the routine never hangs if the retrace bit is not toggling (e.g. under VICE 3.7 xpet, which does not mirror VBLANK onto VIA PB5). On real hardware the bound is never reached and the routine returns at the start of VBLANK. This is polling, not an IRQ handler; no CINV vector is installed.
+- `view_flush_pcr` applies a staged PCR charset write if `view_pcr_pending` is set, using read-modify-write on PCR to preserve CB2 (IEEE-488 NDAC), then clears the flag. It is a no-op (one load plus one branch) when nothing is staged, which is the case for all main-program present calls. The PCR write adds roughly 10 cycles, negligible against the 6000-cycle copy budget.
 - `copy_buffer` copies 1000 bytes from `BUFFER` to `SCREEN` using a page-strided loop (3 full pages of 256 bytes plus a 232-byte tail), mirroring the `clear_screen` pattern. The tail loop uses `txa` before `bne` to test the loop counter (X), not the loaded byte, because `lda` between `dex` and `bne` would overwrite the Z flag. It is the only writer of `SCREEN`.
 
 The 1000-byte copy takes roughly 6000 cycles at 1 MHz, which fits inside the PET VBLANK period.
@@ -200,11 +203,13 @@ Because CBM-DOS sequential files have no backward seek, scrolling up past the ch
 
 ### Character set switching
 
-`view_set_pcr_charset` reads PCR, clears bits 3:1 with `and #$F1`, ORs in `PCR_U` (`$0C`) or `PCR_L` (`$0E`) based on `view_charset`, and writes PCR. It also sets `view_char_offset` to `$00` (UPPER) or `$40` (LOWER). The read-modify-write preserves CB2 (IEEE-488 NDAC).
+`view_set_pcr_charset` sets `view_char_offset` to `$00` (UPPER) or `$40` (LOWER) immediately, and stages the PCR write by storing the target charset bits (`PCR_U` `$0C` or `PCR_L` `$0E`) into `view_pending_pcr_cs` and setting `view_pcr_pending`. It does not write PCR directly. The offset is set immediately so label rendering into `BUFFER` composes with the correct screen codes before the PCR write is flushed.
 
-`view_apply_charset` saves the current PCR bits 3:1 (`and #$0E`) into `saved_pcr_cs`, then calls `view_set_pcr_charset`. It is called after `view_load_chunk` succeeds in `op_view`.
+`view_flush_pcr` applies a staged PCR write: it reads PCR, clears bits 3:1 with `and #$F1`, ORs in `view_pending_pcr_cs`, writes PCR, and clears `view_pcr_pending`. The read-modify-write preserves CB2 (IEEE-488 NDAC). It is called by `present_screen` between `wait_vblank` and `copy_buffer`, so the charset change and the content blit share one VBLANK window. When `view_pcr_pending` is clear it is a no-op.
 
-`view_restore_charset` reads PCR, clears bits 3:1, ORs in `saved_pcr_cs`, and writes PCR. It is called after `view_loop` returns in `op_view`, before `full_redraw`. On open failure `view_apply_charset` is not called, so PCR is unchanged and the failure status renders in the uppercase set.
+`view_apply_charset` saves the current PCR bits 3:1 (`and #$0E`) into `saved_pcr_cs`, then calls `view_set_pcr_charset` to stage the switch. The save happens immediately so the original bits are captured before any flush. It is called after `view_load_chunk` succeeds in `op_view`. The first `view_render` present flushes the staged switch during VBLANK.
+
+`view_restore_charset` stages the restore by storing `saved_pcr_cs` into `view_pending_pcr_cs` and setting `view_pcr_pending`. It does not write PCR directly. It is called after `view_loop` returns in `op_view`, before `full_redraw`. The `full_redraw` present flushes the staged restore during VBLANK. On open failure `view_apply_charset` is not called, so PCR is unchanged and the failure status renders in the uppercase set.
 
 ### Byte to hex
 

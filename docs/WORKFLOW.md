@@ -9,8 +9,8 @@ This file is the authoritative source for the day-to-day development process.
 Before any change, and again whenever the model or session changes:
 
 - Read `README.md`, then `GUIDELINES.md`, then every file in its Sources of Truth list.
-- Read `standard/asm-6502-development.md` before writing code.
-- Consult the relevant `docs/skill/commodore-pet-skill/` sections before writing code.
+- Read `standard/asm-6502-development.md` before code analysis and any code writing.
+- Consult the relevant `docs/skill/commodore-pet-skill/` sections before code analysis and any code writing. The skill must be read before analysing the affected code or drafting any document that describes code or implementation behaviour (change request, plan, proposal), not deferred to the code-writing step. Document-only changes related to code are not exempt.
 - Do not assume prior context.
 
 ## Standard Workflow Cycle
@@ -19,6 +19,7 @@ Before any change, and again whenever the model or session changes:
 
 - Use search to find the relevant section of `src/commander.asm`.
 - Read `PROJECT.md`, `ARCHITECTURE.md`, and `SPECIFICATION.md` for the affected area.
+- Consult the relevant `docs/skill/commodore-pet-skill/` sections for the affected area before proceeding to planning.
 - Identify the register and zero-page contracts the change must preserve.
 
 **Planning**
@@ -106,6 +107,7 @@ After refactoring, evaluate the result in `docs/refactoring/<version>/refactorin
 
 - **No time estimates**: Plans and refactoring proposals never include time or duration estimates.
 - **Document-only changes bypass verification**: Creating or updating change requests, plans, proposals, and assessments does not change source and does not require the verification loop. The loop is required only when source, build scripts, or fixtures change.
+- **Document-only changes related to code require the skill**: Change requests, implementation plans, refactoring proposals, and any other document that describes code or implementation behaviour require the relevant `docs/skill/commodore-pet-skill/` sections to be read first, the same as a code change. The skill-reading rule is not bypassed just because the change itself is document-only.
 - **Confirm before implementing**: Create the change request and plan, then ask for confirmation before writing code.
 - **Restricted directories**: Do not read from `change/`, `plan/`, `refactoring/`, `archive/`, `report/`, or `reference/` automatically. Read them only when the relevant work requires it or the user requests it.
 

@@ -2410,6 +2410,7 @@ cb_tail:
 present_screen:
 
         jsr wait_vblank
+        jsr view_flush_pcr      ; apply staged PCR charset during VBLANK
         jsr copy_buffer
         rts
 
@@ -2524,6 +2525,7 @@ op_view:
         sta view_chunk_base
         sta view_chunk_base+1
         sta view_at_eof
+        sta view_pcr_pending    ; no staged PCR write at open
         jsr view_set_mode_params ; reads persisted view_mode
         jsr view_load_chunk
         bcs ov_exit              ; open failed, status already set
@@ -2585,27 +2587,49 @@ vsm_text:
         sta view_page_size+1
         rts
 
-; ---- view_set_pcr_charset: apply view_charset to PCR bits 3:1 ----
-; Read-modify-write preserves CB2 (IEEE-488 NDAC). Also sets
-; view_char_offset ($00 UPPER, $40 LOWER) for label rendering.
+; ---- view_set_pcr_charset: stage view_charset into PCR bits 3:1 ----
+; Sets view_char_offset ($00 UPPER, $40 LOWER) immediately so label
+; rendering into BUFFER composes with the correct screen codes.
+; Stages the PCR write (view_pending_pcr_cs + view_pcr_pending) instead
+; of writing PCR directly; view_flush_pcr applies it during VBLANK so
+; the charset change and the content blit share one VBLANK window.
 
 view_set_pcr_charset:
 
-        lda PCR
-        and #$F1               ; clear bits 3:1
         ldx view_charset
         beq vspc_upper
-        ora #PCR_L             ; LOWER
+        lda #PCR_L             ; LOWER bits to stage
         ldx #$40
         bne vspc_store
 vspc_upper:
 
-        ora #PCR_U             ; UPPER
+        lda #PCR_U             ; UPPER bits to stage
         ldx #$00
 vspc_store:
 
+        sta view_pending_pcr_cs ; stage the PCR write (do not touch PCR yet)
+        stx view_char_offset    ; set offset now for label rendering
+        lda #$ff
+        sta view_pcr_pending    ; mark a write as pending
+        rts
+
+; ---- view_flush_pcr: apply staged PCR charset write during VBLANK ----
+; No-op when view_pcr_pending is clear (all main-program present calls).
+; Read-modify-write preserves CB2 (IEEE-488 NDAC). Called by present_screen
+; between wait_vblank and copy_buffer.
+
+view_flush_pcr:
+
+        lda view_pcr_pending
+        beq vfp_done
+        lda PCR
+        and #$F1               ; clear bits 3:1
+        ora view_pending_pcr_cs ; apply staged bits
         sta PCR
-        stx view_char_offset
+        lda #0
+        sta view_pcr_pending
+vfp_done:
+
         rts
 
 ; ---- view_apply_charset: save PCR bits 3:1, then switch ----
@@ -2619,15 +2643,17 @@ view_apply_charset:
         jsr view_set_pcr_charset
         rts
 
-; ---- view_restore_charset: restore saved PCR bits 3:1 ----
+; ---- view_restore_charset: stage restore of saved PCR bits 3:1 ----
 ; Called after view_loop returns in op_view, before full_redraw.
+; Stages the restore; full_redraw's present_screen flushes it during
+; VBLANK so the viewer frame and the panel restore appear together.
 
 view_restore_charset:
 
-        lda PCR
-        and #$F1               ; clear bits 3:1
-        ora saved_pcr_cs       ; restore saved bits
-        sta PCR
+        lda saved_pcr_cs
+        sta view_pending_pcr_cs ; stage the restore
+        lda #$ff
+        sta view_pcr_pending
         rts
 
 ; =========================================================
@@ -3593,6 +3619,8 @@ view_charset_mode: byte 0        ; 0=SCREEN (raw), 1=ASCII (translate) (persiste
 view_charset:    byte 0          ; 0=UPPER, 1=LOWER (persisted)
 view_char_offset: byte 0         ; $00 UPPER, $40 LOWER; ORed into label letters
 saved_pcr_cs:    byte 0          ; PCR bits 3:1 saved on viewer entry
+view_pcr_pending: byte 0         ; nonzero = a PCR charset write is staged
+view_pending_pcr_cs: byte 0      ; staged PCR bits 3:1 to OR into PCR on flush
 view_top:        word 0          ; byte offset of visible top
 view_chunk_base: word 0          ; byte offset of chunk start
 view_chunk_len:  word 0          ; bytes loaded in chunk
