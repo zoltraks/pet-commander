@@ -46,8 +46,11 @@ These supplement or override the general standard for PET Commander code.
 
 **Screen writes**
 
-- Only the drawing module writes screen RAM. Compute row addresses with `row_addr_sp`; do not scatter `row*40 + $8000` math through the code.
-- Convert PETSCII to screen codes with `petscii_to_screen`; never poke PETSCII straight into `$8000`.
+- Only the drawing module writes `BUFFER` (the back buffer). Only `copy_buffer` (called by `present_screen`) writes `SCREEN`. Do not write `SCREEN` directly from any other module.
+- Compute row addresses with `row_addr_sp`; do not scatter `row*40 + $7C00` math through the code.
+- Convert PETSCII to screen codes with `petscii_to_screen`; never poke PETSCII straight into `BUFFER`.
+- The `copy_buffer` tail loop must test the loop counter (X), not the loaded byte. Use `txa` before `bne`, or place `dex` after `sta`. The `clear_screen` tail is safe because `sta` does not affect flags; `copy_buffer` inserts `lda` which does. See `docs/skill/commodore-pet-skill/code/standard.md` for the flag-semantics rule.
+- `wait_vblank` must be bounded. An unbounded VBLANK poll hangs under VICE 3.7 xpet because VIA PB5 does not toggle. Bound each phase to 256 iterations.
 
 **Helpers and fixed layout**
 

@@ -16,7 +16,7 @@ The build assembles `src/commander.asm` into `build/commander.prg`.
 
 Output:
 
-- `build/commander.prg` - the program, load address `$0401`, about 8.7 KB.
+- `build/commander.prg` - the program, load address `$0401`, about 8.8 KB.
 
 ## Disk Image Delivery
 

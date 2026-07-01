@@ -28,7 +28,7 @@ The DASM run must finish with `Complete. (0)` and no errors.
 **Header and size check**
 
 Confirm the first two bytes of `build/commander.prg` are `01 04` (load address `$0401`).
-Confirm the build size is in the expected range (about 8.7 KB for the current feature set, which includes the viewer and its 2 KB chunk buffer). A large unexpected change in size is a signal to investigate.
+Confirm the build size is in the expected range (about 8.8 KB for the current feature set, which includes the viewer, its 2 KB chunk buffer, and the Present/Blit module). A large unexpected change in size is a signal to investigate.
 
 **Smoke run**
 
@@ -39,6 +39,8 @@ xpet -model 3032 -drive8type 2031 -warp -autostart example/work.d64
 ```
 
 The program must run for tens of millions of cycles with a real D64 mounted on drive 8 without crashing.
+
+Note: VICE 3.7 xpet does not mirror VBLANK onto VIA PB5 (`$E840` bit 5). The `wait_vblank` poll is bounded to 256 iterations per phase so it does not hang under VICE. On real hardware the bound is never reached and the poll syncs to VBLANK normally.
 
 **Behaviour check**
 

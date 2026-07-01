@@ -110,7 +110,7 @@ For a native PET D80 image use `-drive8type 8050`.
 
 ## Verified
 
-- Clean DASM assembly (`Complete. (0)`), output size ~8.7 KB.
+- Clean DASM assembly (`Complete. (0)`), output size ~8.8 KB.
 - PRG header carries load address `$0401`; `SYS 1038` ($040E) lands on a `JMP start` instruction.
 - Runs for >100M cycles in `xpet -warp` with a real D64 mounted on drive 8 without crashing or runaway memory writes.
 
@@ -126,6 +126,7 @@ Full visual verification requires a graphical xpet session.
 - `start` / `main_loop` / `dispatch_key`
 - Cursor + scroll handling
 - Screen drawing (frames, title bar, help bar, panel render)
+- Present/Blit (`present_screen`, `wait_vblank`, `copy_buffer`)
 - `load_panel` (open `$`, parse CBM-DOS directory)
 - `op_delete`, `op_rename`, `op_copy`
 - `send_dos_cmd`, `read_dos_status`

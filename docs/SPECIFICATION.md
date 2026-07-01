@@ -139,8 +139,8 @@ Navigation keeps the selected index inside the visible window of `PANEL_ROWS` ro
 
 `present_screen` is called at the end of every redraw entry point and after every interactive row-24 update. It waits for VBLANK then copies the back buffer to screen RAM in one atomic pass.
 
-- `wait_vblank` polls VIA PORT B bit 5 (`$E840` bit 5). The signal is LOW during VBLANK and HIGH during active display. A two-phase wait syncs to the start of VBLANK: phase 1 skips any remaining VBLANK (wait while LOW), phase 2 waits for active display to end (wait while HIGH). Returns at the start of VBLANK. This is polling, not an IRQ handler; no CINV vector is installed.
-- `copy_buffer` copies 1000 bytes from `BUFFER` to `SCREEN` using a page-strided loop (3 full pages of 256 bytes plus a 232-byte tail), mirroring the `clear_screen` pattern. It is the only writer of `SCREEN`.
+- `wait_vblank` polls VIA PORT B bit 5 (`$E840` bit 5). The signal is LOW during VBLANK and HIGH during active display. A bounded two-phase wait syncs to the start of VBLANK: phase 1 skips any remaining VBLANK (wait while LOW), phase 2 waits for active display to end (wait while HIGH). Each phase is bounded to 256 iterations so the routine never hangs if the retrace bit is not toggling (e.g. under VICE 3.7 xpet, which does not mirror VBLANK onto VIA PB5). On real hardware the bound is never reached and the routine returns at the start of VBLANK. This is polling, not an IRQ handler; no CINV vector is installed.
+- `copy_buffer` copies 1000 bytes from `BUFFER` to `SCREEN` using a page-strided loop (3 full pages of 256 bytes plus a 232-byte tail), mirroring the `clear_screen` pattern. The tail loop uses `txa` before `bne` to test the loop counter (X), not the loaded byte, because `lda` between `dex` and `bne` would overwrite the Z flag. It is the only writer of `SCREEN`.
 
 The 1000-byte copy takes roughly 6000 cycles at 1 MHz, which fits inside the PET VBLANK period.
 

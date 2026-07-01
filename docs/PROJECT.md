@@ -96,7 +96,7 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 
 - **NFR-Performance**: The main loop must stay responsive on a 1 MHz 6502. Screen redraws must not introduce visible lag during navigation.
 - **NFR-FlickerFree**: Screen updates must be flicker-free. All drawing composes into a back buffer in RAM; a single atomic copy transfers the complete frame to screen RAM during VBLANK. The user never sees a partially updated screen during navigation, file operations, viewer scrolling, or prompt input.
-- **NFR-Footprint**: The assembled program plus its buffers must fit comfortably in PET 3032 RAM. Current build is about 8.7 KB of code and data, including the viewer and its 2 KB chunk buffer. The 1000-byte back buffer lives at a fixed high-RAM address (`$7C00`) outside the PRG.
+- **NFR-Footprint**: The assembled program plus its buffers must fit comfortably in PET 3032 RAM. Current build is about 8.8 KB of code and data, including the viewer, its 2 KB chunk buffer, and the Present/Blit module. The 1000-byte back buffer lives at a fixed high-RAM address (`$7C00`) outside the PRG.
 - **NFR-Stability**: The program must not perform runaway memory writes. It must run for tens of millions of cycles under warp without crashing.
 - **NFR-Reentrancy of BASIC**: Borrowed zero-page bytes must be saved on entry and restored on exit so BASIC remains usable.
 - **NFR-Output stability**: The PRG load address must remain `$0401` and `SYS 1038` must land on the start vector.
