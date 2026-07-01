@@ -36,7 +36,8 @@ Each module is a labelled section of `src/commander.asm`. Responsibilities are k
 | Main loop            | `main_loop`, `dispatch_key`           | Read a key, route to a handler, check the quit flag.            |
 | KERNAL wrappers      | `pet_setnam`, `pet_setlfs`, `pet_open`, `pet_close` | PET-specific OPEN/CLOSE that bypass BASIC parameter parsing.    |
 | Navigation           | `cursor_up`, `cursor_down`, `do_up`, `do_down`, `do_home`, `do_switch` | Move selection, scroll the window, switch active panel.        |
-| Screen drawing       | `full_redraw`, `redraw_panels`, `redraw_active`, `clear_screen`, `draw_title_bar`, `draw_frames`, `draw_help_bar`, `draw_status`, `draw_panel`, `draw_panel_header`, `draw_panel_rows`, `draw_entry` | Compose the static frame and dynamic panel content into `$8000`. |
+| Screen drawing       | `full_redraw`, `redraw_panels`, `redraw_active`, `clear_screen`, `draw_title_bar`, `draw_frames`, `draw_help_bar`, `draw_status`, `draw_panel`, `draw_panel_header`, `draw_panel_rows`, `draw_entry` | Compose the static frame and dynamic panel content into `BUFFER` (the back buffer). |
+| Present / blit       | `present_screen`, `wait_vblank`, `copy_buffer` | Wait for VBLANK (poll VIA PB5) and copy `BUFFER` to `SCREEN` in one atomic pass. The only writer of `SCREEN`. |
 | Number / text format | `print_num3`, `mul20`, `petscii_to_screen`, `row_addr_sp`, `panel_entry_sp` | Helpers for block counts, record indexing, and PETSCII-to-screen-code conversion. |
 | Directory loader     | `load_panel`                          | Open `$`, run the directory parse state machine, fill the entry buffer. |
 | File operations      | `op_delete`, `op_rename`, `op_copy`, `op_cancel`   | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.     |
@@ -50,7 +51,8 @@ What modules must not do:
 - Navigation must not perform I/O. It only mutates selection and scroll state, then asks the drawing module to redraw.
 - Drawing must not change panel data. It reads state and renders; it never loads or mutates entries.
 - File operations must not draw directly. They issue DOS commands and reload, then a redraw is triggered.
-- The viewer is a modal overlay. It must not mutate panel state. It reads the selected entry name, opens the file, renders to screen RAM, and restores the panels on close via `full_redraw`.
+- The viewer is a modal overlay. It must not mutate panel state. It reads the selected entry name, opens the file, renders to the back buffer, and restores the panels on close via `full_redraw`.
+- The drawing module and viewer render write only `BUFFER`. Only `copy_buffer` (called by `present_screen`) writes `SCREEN`.
 
 ## State Domains
 
@@ -93,7 +95,8 @@ Navigation skips the DOS stages: a cursor key updates `p_sel` / `p_top` and trig
 | KERNAL ZP mirrors | `$0096`, `$00A7`  | `STATUS`, `BLNSW` (cursor-blink switch).                  |
 | PET OPEN/CLOSE ZP | `$D1`-`$DB`       | Filename length, logical/secondary/device numbers, filename pointer. |
 | Program load      | `$0401`           | PRG load address. BASIC stub, then code and data.         |
-| Screen RAM        | `$8000`           | 40x25 = 1000 screen-code bytes.                           |
+| Screen RAM        | `$8000`           | 40x25 = 1000 screen-code bytes. Destination of the blit.   |
+| Back buffer       | `$7C00`           | `BUFFER`, 1000 bytes, page-aligned. Target of all drawing. |
 | Entry tables      | within program    | `entries_p0`, `entries_p1` at the tail of the binary.     |
 | Viewer chunk      | within program    | `view_chunk` (2048 bytes) at the tail of the binary.      |
 
@@ -104,7 +107,7 @@ The program borrows zero-page bytes `$FB`-`$FE` (KERNAL tape pointers, safe whil
 - The **main loop** is the only place that reads the keyboard. It owns control flow.
 - **Handlers** are leaf operations invoked by the dispatcher. They return to the loop.
 - The **directory loader**, **DOS channel**, and **viewer** are the only modules that perform IEEE-488 I/O.
-- The **drawing module** and the **viewer render** are the only writers of screen RAM.
+- The **drawing module** and the **viewer render** write only the back buffer `BUFFER`. The **present/blit module** is the only writer of `SCREEN`, called at the end of each redraw entry point and after each interactive row-24 update.
 
 This keeps I/O and rendering on separate, auditable seams.
 
@@ -139,6 +142,11 @@ This keeps I/O and rendering on separate, auditable seams.
   - **Decision**: The viewer is a modal overlay that covers the panels, owns its own state and chunk buffer, and restores the panels via `full_redraw` on close. File data is loaded in fixed-size chunks (`VIEW_CHUNK` = 2048 bytes) from a sequential read channel.
   - **Rationale**: A modal overlay avoids mutating panel state. Chunk-based loading keeps memory bounded (one 2 KB buffer) while allowing scrolling within a chunk without disk I/O. CBM-DOS sequential files have no backward seek, so scrolling up past the chunk re-opens and skips forward.
   - **Trade-off**: Upward scroll past the chunk boundary is expensive (byte-by-byte skip from file start). The chunk is larger than one screenful (880 bytes for text, 176 for hex) so most scrolling stays within the chunk.
+
+- **AD-7 Double-buffered rendering with VBLANK-synced blit**
+  - **Decision**: All drawing composes into a 1000-byte back buffer `BUFFER` at `$7C00`. A `present_screen` routine waits for VBLANK by polling VIA PORT B bit 5, then copies `BUFFER` to `SCREEN` (`$8000`) in one atomic page-strided pass. `copy_buffer` is the sole writer of `SCREEN`.
+  - **Rationale**: Writing directly to `SCREEN` while the display is drawn causes visible flicker on cursor moves, panel reloads, and viewer scrolling. Composing off-screen and blitting during VBLANK eliminates the partial-update window. Polling (not an IRQ handler) keeps the clean BASIC exit path unchanged: no CINV vector is installed.
+  - **Trade-off**: Every present copies the full 1000 bytes (~6000 cycles at 1 MHz), which fits inside the PET VBLANK period. The back buffer occupies `$7C00` in the region BASIC uses for its string pool; on a fresh disk autostart no strings are allocated, so the region is free during the run and BASIC's pointers are untouched on exit.
 
 ## Error Handling
 

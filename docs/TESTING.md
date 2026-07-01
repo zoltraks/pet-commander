@@ -77,6 +77,8 @@ Automated line coverage is not applicable to this target. The qualitative target
 - The viewer open-failure path (`VIEW OPEN FAILED`) is reproduced at least once.
 - The viewer restores the panels on close; after closing, the panel state (selection, scroll, active panel) is unchanged.
 - The error paths (`DRIVE NOT READY`, `STATUS READ FAILED`, `FILE EXISTS`, `VIEW OPEN FAILED`) are reproduced at least once when their code is touched.
+- Double-buffered rendering: navigation (cursor up/down, TAB switch, `L` reload), viewer scrolling, and prompt input (`N`, `C`, `D` confirmation) are all flicker-free; each frame appears complete with no partial-update window.
+- Clean BASIC exit after double buffering: after `Q`, `READY.` appears, then `PRINT FRE(0)` and a string assignment (`A$="TEST"`) succeed, confirming the `$7C00` back-buffer region did not corrupt BASIC RAM and no IRQ vector was left installed.
 
 ## CI Configuration
 

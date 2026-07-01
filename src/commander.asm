@@ -55,6 +55,9 @@ BLNSW   = $00A7
 
 ; ---- Hardware -----------------------------------------
 SCREEN  = $8000
+BUFFER  = $7C00          ; 1000-byte back buffer, page-aligned; target of all drawing
+VIA_PORTB   = $E840      ; VIA port B (PB5 = VBLANK signal)
+RETRACE_BIT = $20        ; PB5 mask: LOW during VBLANK, HIGH during active display
 
 ; ---- Layout constants ---------------------------------
 PANEL_ROWS  = 20                ; visible directory rows in each panel
@@ -265,6 +268,8 @@ init:
 
         lda #$93                ; PETSCII CLR/HOME
         jsr CHROUT
+
+        jsr clear_screen        ; clear back buffer (uninitialized at fixed addr)
         rts
 
 ; =========================================================
@@ -462,12 +467,14 @@ redraw_panels:
         lda #1
         jsr draw_panel
         jsr draw_status
+        jsr present_screen
         rts
 
 redraw_active:
 
         lda active_panel
         jsr draw_panel
+        jsr present_screen
         rts
 
 ; =========================================================
@@ -481,18 +488,18 @@ clear_screen:
 
 cs_loop:
 
-        sta SCREEN,x
-        sta SCREEN+$100,x
-        sta SCREEN+$200,x
+        sta BUFFER,x
+        sta BUFFER+$100,x
+        sta BUFFER+$200,x
         inx
         bne cs_loop             ; 768 bytes done (3 pages)
 
-        ldx #$E8                ; remaining 232 bytes: $8300-$83E7
+        ldx #$E8                ; remaining 232 bytes: $7F00-$7FE7
 
 cs_tail:
 
         dex
-        sta SCREEN+$300,x       ; x = 231..0, writes $83E7..$8300
+        sta BUFFER+$300,x       ; x = 231..0, writes $7FE7..$7F00
         bne cs_tail             ; 232 bytes done, total = 1000
         rts
 
@@ -507,7 +514,7 @@ draw_title_bar:
 dt_loop:
 
         lda title_str,x
-        sta SCREEN,x
+        sta BUFFER,x
         inx
         cpx #40
         bne dt_loop
@@ -516,9 +523,9 @@ dt_loop:
 
 dt_rvs:
 
-        lda SCREEN,x
+        lda BUFFER,x
         ora #$80
-        sta SCREEN,x
+        sta BUFFER,x
         dex
         bpl dt_rvs
         rts
@@ -645,7 +652,7 @@ draw_help_bar:
 dh_loop:
 
         lda help_str,x
-        sta SCREEN+24*40,x
+        sta BUFFER+24*40,x
         inx
         cpx #40
         bne dh_loop
@@ -676,7 +683,7 @@ ds_loop:
 
         lda status_buf,x
         beq ds_done
-        sta SCREEN+24*40,x
+        sta BUFFER+24*40,x
         inx
         cpx #40
         bne ds_loop
@@ -1182,13 +1189,15 @@ p2s_done:
 
 ; =========================================================
 ; row_addr_sp: X = screen row (0..24); sets sp_lo/sp_hi to col-0 addr
+; Base is BUFFER (the back buffer), not SCREEN. All sp-based drawing
+; composes off-screen; present_screen blits BUFFER to SCREEN.
 ; =========================================================
 
 row_addr_sp:
 
-        lda #<SCREEN
+        lda #<BUFFER
         sta sp_lo
-        lda #>SCREEN
+        lda #>BUFFER
         sta sp_hi
         cpx #0
         beq ras_done
@@ -2061,12 +2070,14 @@ prompt_text:
         sta prompt_src_lo
         sty prompt_src_hi
         jsr draw_prompt_label
+        jsr present_screen
         lda #0
         sta prompt_len
 
 pt_loop:
 
         jsr show_prompt_buf
+        jsr present_screen
         jsr GETIN
         beq pt_loop
         cmp #K_STOP
@@ -2121,7 +2132,7 @@ draw_prompt_label:
 
 dpl_clr:
 
-        sta SCREEN+24*40,x
+        sta BUFFER+24*40,x
         inx
         cpx #40
         bne dpl_clr
@@ -2139,7 +2150,7 @@ dpl_loop:
         lda (sp_lo),y
         beq dpl_done
         jsr petscii_to_screen
-        sta SCREEN+24*40,x
+        sta BUFFER+24*40,x
         iny
         inx
         cpx #16
@@ -2150,10 +2161,10 @@ dpl_done:
         ; Append ": "
         lda #CH_COLON
         jsr petscii_to_screen
-        sta SCREEN+24*40,x
+        sta BUFFER+24*40,x
         inx
         lda #SC_SPACE
-        sta SCREEN+24*40,x
+        sta BUFFER+24*40,x
         inx
         stx prompt_label_len
         rts
@@ -2177,7 +2188,7 @@ spb_loop:
         adc prompt_label_len
         tay
         lda spb_a
-        sta SCREEN+24*40,y
+        sta BUFFER+24*40,y
         inx
         jmp spb_loop
 
@@ -2194,7 +2205,7 @@ spb_pad_loop:
         bcs spb_done
         tay
         lda #SC_SPACE
-        sta SCREEN+24*40,y
+        sta BUFFER+24*40,y
         inx
         jmp spb_pad_loop
 
@@ -2213,6 +2224,7 @@ prompt_yn:
         sta prompt_src_lo
         sty prompt_src_hi
         jsr draw_prompt_label
+        jsr present_screen
 
 py_loop:
 
@@ -2238,6 +2250,91 @@ py_no:
 
         jsr clear_status
         sec
+        rts
+
+; =========================================================
+; Present / blit: double-buffered screen update
+; All drawing composes into BUFFER; present_screen waits for
+; VBLANK and copies BUFFER to SCREEN in one atomic pass.
+; copy_buffer is the only writer of SCREEN.
+; =========================================================
+
+; ---- wait_vblank: bounded two-phase VBLANK sync via VIA PB5 ----
+; PB5 is LOW during VBLANK, HIGH during active display.
+; Phase 1 skips any remaining VBLANK (wait for HIGH); phase 2 waits
+; for the next VBLANK start (wait for LOW). Both phases are bounded
+; so the routine never hangs if the retrace bit is not toggling
+; (e.g. under emulators that do not mirror VBLANK onto VIA PB5).
+; On real hardware it returns at the start of VBLANK. Clobbers A, X.
+
+wait_vblank:
+
+        ldx #$00
+
+wv_p1:
+
+        lda VIA_PORTB
+        and #RETRACE_BIT
+        bne wv_p2               ; bit HIGH: VBLANK ended -> phase 2
+        dex
+        bne wv_p1
+        rts                     ; phase 1 bound exhausted: give up (no sync)
+
+wv_p2:
+
+        ldx #$00
+
+wv_p2_loop:
+
+        lda VIA_PORTB
+        and #RETRACE_BIT
+        beq wv_done             ; bit LOW: VBLANK started
+        dex
+        bne wv_p2_loop
+        rts                     ; phase 2 bound exhausted: give up (no sync)
+
+wv_done:
+
+        rts                     ; at start of VBLANK
+
+; ---- copy_buffer: copy 1000 bytes BUFFER -> SCREEN ----
+; Page-strided: 3 full pages (768 bytes) + 232-byte tail.
+; Clobbers A and X.
+
+copy_buffer:
+
+        ldx #0
+
+cb_loop:
+
+        lda BUFFER,x            ; $7C00-$7CFF -> $8000-$80FF
+        sta SCREEN,x
+        lda BUFFER+$100,x       ; $7D00-$7DFF -> $8100-$81FF
+        sta SCREEN+$100,x
+        lda BUFFER+$200,x       ; $7E00-$7EFF -> $8200-$82FF
+        sta SCREEN+$200,x
+        inx
+        bne cb_loop             ; 768 bytes done (3 pages)
+
+        ldx #$E8                ; remaining 232 bytes: $7F00-$7FE7 -> $8300-$83E7
+
+cb_tail:
+
+        dex
+        lda BUFFER+$300-1,x     ; x = 231..0, reads $7FE7..$7F00
+        sta SCREEN+$300-1,x     ; writes $83E7..$8300
+        txa                     ; test X, not the loaded byte
+        bne cb_tail             ; 232 bytes done, total = 1000
+        rts
+
+; ---- present_screen: wait for VBLANK, then blit BUFFER -> SCREEN ----
+; Called at the end of every redraw entry point and after each
+; interactive row-24 update. Clobbers A and X.
+
+present_screen:
+
+        jsr wait_vblank
+        jsr copy_buffer
         rts
 
 ; =========================================================
@@ -2503,6 +2600,7 @@ vlc_err:
         lda #<msg_view_err
         ldy #>msg_view_err
         jsr set_status
+        jsr present_screen       ; show VIEW OPEN FAILED (no redraw follows)
         sec
         rts
 
@@ -2624,6 +2722,7 @@ vr_help_fill_loop:
         jmp vr_help_fill_loop
 vr_done:
 
+        jsr present_screen
         rts
 
 ; =========================================================

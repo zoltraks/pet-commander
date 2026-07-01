@@ -74,7 +74,10 @@ These values must not be hard-coded ad hoc elsewhere. They are defined once at t
 
 | Constant     | Value   | Meaning                                          |
 | ------------ | ------- | ------------------------------------------------ |
-| `SCREEN`     | `$8000` | Base of 40x25 screen RAM.                        |
+| `SCREEN`     | `$8000` | Base of 40x25 screen RAM. Destination of the blit. |
+| `BUFFER`     | `$7C00` | 1000-byte back buffer, page-aligned. Target of all drawing. |
+| `VIA_PORTB`  | `$E840` | VIA port B; bit 5 carries the VBLANK signal.     |
+| `RETRACE_BIT`| `$20`   | Mask for VIA PB5 (VBLANK: LOW = blank, HIGH = active). |
 | `PANEL_ROWS` | `20`    | Visible directory rows per panel.                |
 | `PANEL_WIDTH`| `20`    | Columns per panel including frame borders.       |
 | `PANEL_INNER`| `18`    | Inner content columns (excluding frame borders). |
@@ -130,7 +133,27 @@ Navigation keeps the selected index inside the visible window of `PANEL_ROWS` ro
 
 ### Screen addressing
 
-`row_addr_sp` computes the screen-RAM address of a given text row into the `sp` pointer so draw routines can write a row without recomputing `row*40 + $8000` inline.
+`row_addr_sp` computes the back-buffer address of a given text row into the `sp` pointer so draw routines can write a row without recomputing `row*40 + $7C00` inline. Its base is `BUFFER`, not `SCREEN`: all `sp`-based drawing composes into the back buffer. The routines that write row 0 or row 24 directly (`draw_title_bar`, `draw_help_bar`, `draw_status`, `draw_prompt_label`, `show_prompt_buf`) and `clear_screen` also target `BUFFER`.
+
+### Present and blit
+
+`present_screen` is called at the end of every redraw entry point and after every interactive row-24 update. It waits for VBLANK then copies the back buffer to screen RAM in one atomic pass.
+
+- `wait_vblank` polls VIA PORT B bit 5 (`$E840` bit 5). The signal is LOW during VBLANK and HIGH during active display. A two-phase wait syncs to the start of VBLANK: phase 1 skips any remaining VBLANK (wait while LOW), phase 2 waits for active display to end (wait while HIGH). Returns at the start of VBLANK. This is polling, not an IRQ handler; no CINV vector is installed.
+- `copy_buffer` copies 1000 bytes from `BUFFER` to `SCREEN` using a page-strided loop (3 full pages of 256 bytes plus a 232-byte tail), mirroring the `clear_screen` pattern. It is the only writer of `SCREEN`.
+
+The 1000-byte copy takes roughly 6000 cycles at 1 MHz, which fits inside the PET VBLANK period.
+
+Present points:
+
+- `full_redraw` (startup, viewer close).
+- `redraw_panels` (after file operations and reload).
+- `redraw_active` (after cursor moves and panel switch).
+- `view_render` (each viewer frame).
+- After `draw_status` and `clear_status` (status row updates).
+- After `draw_prompt_label`, after each `show_prompt_buf` in the `prompt_text` loop, and after the `prompt_yn` confirmation display (prompt input visibility).
+
+`BUFFER` is at a fixed high-RAM address and is not part of the PRG image, so it is uninitialized on load. `init` clears it (via `clear_screen`, which targets `BUFFER`) before the first `full_redraw`.
 
 ### Viewer chunk loading
 
