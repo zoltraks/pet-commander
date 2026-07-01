@@ -67,12 +67,18 @@ The viewer is a modal overlay that covers the panels. It opens in text mode show
 |----------------|-----------------------------------------|
 | T              | Text display (default)                  |
 | H              | Hexadecimal display                     |
+| A              | ASCII render: translate file bytes to screen codes |
+| S              | SCREEN render: show file bytes as raw screen codes (default) |
+| L              | Switch character set to lowercase       |
+| U              | Switch character set to uppercase (default) |
 | Cursor up/down | Scroll one row                          |
 | Cursor left/right | Page up / page down                  |
 | HOME           | Jump to the start of the file           |
 | E or RUN/STOP  | Close the viewer and restore the panels |
 
 The viewer loads file data in fixed-size chunks from disk. Scrolling within a chunk needs no disk I/O; scrolling past the chunk boundary reloads from disk. The current byte offset is preserved when switching between text and hex. On close, the panels reappear unchanged.
+
+Text mode has two render modes. SCREEN (default) shows file bytes directly as screen codes with no conversion. ASCII translates file bytes to screen codes for the active character set; in the uppercase set, lowercase ASCII letters render as inverse-video uppercase so they stay visible. The character set (UPPER default, LOWER) is switched via the VIA PCR register and is restored to uppercase when the viewer closes. The render mode, display mode (text/hex), and character set persist across viewer opens within one program run.
 
 ## Building
 
@@ -132,7 +138,7 @@ Full visual verification requires a graphical xpet session.
 - `op_delete`, `op_rename`, `op_copy`
 - `send_dos_cmd`, `read_dos_status`
 - `prompt_text`, `prompt_yn`
-- Viewer (`op_view`, `view_load_chunk`, `view_render`, `view_loop`, scrolling, `byte_to_hex`)
+- Viewer (`op_view`, `view_load_chunk`, `view_render`, `view_draw_header`, `view_draw_footer`, `view_render_text`, `view_render_hex`, `view_loop`, scrolling, charset helpers, `ascii_to_screen`, `byte_to_hex`)
 - Entry table buffers and the viewer chunk buffer
 
 The program runs from `$0401` (BASIC stub `10 SYS1038`) and falls back to BASIC on Q / RUN/STOP.

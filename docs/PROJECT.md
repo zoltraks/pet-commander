@@ -71,6 +71,12 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **FR-M15**: Cursor up/down scrolls the viewer content one row at a time. Cursor left/right scrolls by a full page. In text mode, page scroll overlaps by one line (the last line of the previous page is the first line of the new page). In hex mode, page scroll has no overlap. HOME jumps to the start of the file. Scrolling clamps at the end of the file.
 - **FR-M16**: The viewer loads file data in fixed-size chunks from disk. Scrolling within the chunk does not require disk I/O. Scrolling past the chunk boundary reloads from disk.
 - **FR-M17**: `E` or RUN/STOP exits the viewer and restores the panels. `Q` is reserved for quitting the main program and does not exit the viewer.
+- **FR-M18**: The viewer text mode has two render modes. `S` selects SCREEN mode (default): file bytes are written to the back buffer directly as screen codes with no conversion and no dot substitution. `A` selects ASCII mode: file bytes are interpreted as ASCII and translated to screen codes for the active character set; non-printable bytes (`$00`-`$1F`, `$7F`, `$80`-`$FF`) become the dot placeholder.
+- **FR-M19**: The viewer has two character sets selected via the VIA PCR register. `U` selects UPPER (default, the uppercase/graphics set); `L` selects LOWER (the lowercase/text set). The switch uses read-modify-write on PCR to preserve the CB2 (IEEE-488 NDAC) bits.
+- **FR-M20**: In ASCII mode the translation depends on the active character set. ASCII `A`-`Z` map to screen `$01`-`$1A` in UPPER and to `$41`-`$5A` in LOWER. ASCII `a`-`z` map to screen `$01`-`$1A` in LOWER, and to reverse-video uppercase `$81`-`$9A` in UPPER (so lowercase stays visible instead of becoming dots). Other printable ASCII ranges reuse the existing PETSCII-to-screen mapping.
+- **FR-M21**: On viewer entry the program saves the current PCR charset bits (3:1) and applies the viewer's character-set flag. On viewer exit the program restores the saved PCR charset bits, so the machine always returns to the uppercase set. The charset switch is applied only while the viewer is interactively displayed, not during chunk loading, so an open-failure status renders in the uppercase set.
+- **FR-M22**: The viewer header and footer fixed labels (`VIEW`, `TEXT`, `HEX`, `ASCII`, `SCREEN`, `LOWER`, `UPPER`, `EXIT`) always render as uppercase letters in either character set, because the screen codes for `A`-`Z` differ between the sets. The header filename is an exception: it is converted once via `petscii_to_screen` and is not re-translated on a charset switch, so a name stored as `FILE.TXT` displays as `file.txt` in the lowercase set. This side effect is intentional and indicates the active character set.
+- **FR-M23**: The viewer persists `view_mode` (TEXT/HEX), `view_charset_mode` (SCREEN/ASCII), and `view_charset` (UPPER/LOWER) across viewer opens within one program run. `view_top`, `view_chunk_base`, `view_chunk_len`, and `view_at_eof` reset to zero on each open. On a fresh program run the flags reset to their defaults (TEXT, SCREEN, UPPER).
 
 ### Should
 
@@ -99,7 +105,7 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **NFR-FlickerFree**: Screen updates must be flicker-free. All drawing composes into a back buffer in RAM; a single atomic copy transfers the complete frame to screen RAM during VBLANK. The user never sees a partially updated screen during navigation, file operations, viewer scrolling, or prompt input.
 - **NFR-Footprint**: The assembled program plus its buffers must fit comfortably in PET 3032 RAM. Current build is about 9.2 KB of code and data, including the viewer with bordered frame layout, its 2 KB chunk buffer, and the Present/Blit module. The 1000-byte back buffer lives at a fixed high-RAM address (`$7C00`) outside the PRG.
 - **NFR-Stability**: The program must not perform runaway memory writes. It must run for tens of millions of cycles under warp without crashing.
-- **NFR-Reentrancy of BASIC**: Borrowed zero-page bytes must be saved on entry and restored on exit so BASIC remains usable.
+- **NFR-Reentrancy of BASIC**: Borrowed zero-page bytes must be saved on entry and restored on exit so BASIC remains usable. The VIA PCR charset bits saved on viewer entry must be restored on viewer exit so the machine returns to the uppercase set.
 - **NFR-Output stability**: The PRG load address must remain `$0401` and `SYS 1038` must land on the start vector.
 - **NFR-Readability**: Source must follow `standard/asm-6502-development.md` for labels, sections, and comments.
 
@@ -110,7 +116,7 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **UC-3 Rename a file**: The user selects a file, presses `N`, types a new name, and presses RETURN. The program issues the DOS rename, reloads the panel, and shows status.
 - **UC-4 Copy a file**: The user selects a file, presses `C`, types a destination name, and presses RETURN. The program issues the DOS copy, reloads the panel, and shows status.
 - **UC-5 Quit cleanly**: The user presses `Q`. The program restores borrowed zero page and returns to BASIC with `READY.`
-- **UC-6 View a file**: The user selects a file and presses `V`. The viewer opens showing the start of the file in text mode inside a bordered frame with header and footer bars. The user presses `H` to switch to hex, scrolls with cursor up/down (one row) or cursor left/right (one page), presses `T` to return to text, and presses `E` to close. The panels reappear unchanged.
+- **UC-6 View a file**: The user selects a file and presses `V`. The viewer opens showing the start of the file in text mode (SCREEN render, UPPER charset) inside a bordered frame with header and footer bars. The user presses `A` to translate ASCII, presses `L` to switch to the lowercase set so lowercase letters render, scrolls with cursor up/down (one row) or cursor left/right (one page), presses `S` to return to raw screen codes, presses `U` to return to the uppercase set, and presses `E` to close. The panels reappear unchanged in the uppercase set.
 
 ## Quality Targets
 

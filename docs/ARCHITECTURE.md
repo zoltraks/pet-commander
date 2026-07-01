@@ -43,7 +43,7 @@ Each module is a labelled section of `src/commander.asm`. Responsibilities are k
 | File operations      | `op_delete`, `op_rename`, `op_copy`, `op_cancel`   | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.     |
 | DOS channel          | `send_dos_cmd`, `read_dos_status`     | Send a command on channel 15 and read back the status string.   |
 | Prompts              | `prompt_text`, `prompt_yn`, `draw_prompt_label`, `show_prompt_buf` | Bottom-line text entry and yes/no confirmation.                 |
-| Viewer               | `op_view`, `view_load_chunk`, `view_render`, `view_draw_frame`, `view_render_text`, `view_render_hex`, `view_loop`, `view_scroll_down`, `view_scroll_up`, `view_page_down`, `view_page_up`, `view_home`, `byte_to_hex` | Modal file viewer with bordered frame, header/footer bars, text and hex display, chunk-based partial load, row and page scrolling. |
+| Viewer               | `op_view`, `view_load_chunk`, `view_render`, `view_draw_frame`, `view_draw_header`, `view_draw_footer`, `view_render_text`, `view_render_hex`, `view_loop`, `view_scroll_down`, `view_scroll_up`, `view_page_down`, `view_page_up`, `view_home`, `view_set_mode_params`, `view_set_pcr_charset`, `view_apply_charset`, `view_restore_charset`, `ascii_to_screen`, `byte_to_hex` | Modal file viewer with bordered frame, header/footer bars, text and hex display, SCREEN/ASCII render modes, UPPER/LOWER character-set switching with PCR save/restore, charset-aware label rendering, chunk-based partial load, row and page scrolling. |
 | Data buffers         | `entries_p0`, `entries_p1`, `cmd_buf`, `prompt_buf`, `savename`, `status_buf`, `view_chunk` | Per-panel entry tables, scratch buffers, and the viewer chunk buffer.                     |
 
 What modules must not do:
@@ -51,7 +51,7 @@ What modules must not do:
 - Navigation must not perform I/O. It only mutates selection and scroll state, then asks the drawing module to redraw.
 - Drawing must not change panel data. It reads state and renders; it never loads or mutates entries.
 - File operations must not draw directly. They issue DOS commands and reload, then a redraw is triggered.
-- The viewer is a modal overlay. It must not mutate panel state. It reads the selected entry name, opens the file, renders to the back buffer, and restores the panels on close via `full_redraw`.
+- The viewer is a modal overlay. It must not mutate panel state. It reads the selected entry name, opens the file, renders to the back buffer, and restores the panels on close via `full_redraw`. The viewer saves the VIA PCR charset bits on entry and restores them on exit so the machine returns to the uppercase set; the charset switch is applied only while the viewer is interactively displayed, not during `view_load_chunk`.
 - The drawing module and viewer render write only `BUFFER`. Only `copy_buffer` (called by `present_screen`) writes `SCREEN`.
 
 ## State Domains
@@ -64,7 +64,7 @@ State is separated into three domains.
 
 Scratch buffers (`cmd_buf`, `prompt_buf`, `savename`, `status_buf`) are transient and owned by whichever operation is running.
 
-The viewer owns its own state domain: `view_mode`, `view_top`, `view_chunk_base`, `view_chunk_len`, `view_at_eof`, `view_row_size`, `view_screen_size`, `view_page_size`, `view_fname`, `view_fname_len`, and the `view_chunk` buffer. This state is separate from panel state and is discarded on viewer close.
+The viewer owns its own state domain: `view_mode`, `view_charset_mode`, `view_charset`, `view_char_offset`, `saved_pcr_cs`, `view_top`, `view_chunk_base`, `view_chunk_len`, `view_at_eof`, `view_row_size`, `view_screen_size`, `view_page_size`, `view_fname`, `view_fname_len`, and the `view_chunk` buffer. This state is separate from panel state. `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens within one program run; the rest reset on each open. `saved_pcr_cs` holds the PCR charset bits saved on entry and restored on exit.
 
 ## Data Flow
 
@@ -149,6 +149,11 @@ This keeps I/O and rendering on separate, auditable seams.
   - **Trade-off**: Every present copies the full 1000 bytes (~6000 cycles at 1 MHz), which fits inside the PET VBLANK period. The back buffer occupies `$7C00` in the region BASIC uses for its string pool; on a fresh disk autostart no strings are allocated, so the region is free during the run and BASIC's pointers are untouched on exit.
   - **Bounded poll**: The VBLANK poll is bounded to 256 iterations per phase. VICE 3.7 xpet does not mirror VBLANK onto VIA PB5, so an unbounded poll hangs forever under VICE. The bound expires and the blit proceeds without sync -- still flicker-free because the full 1000-byte copy is atomic relative to a single `GETIN` poll. On real hardware the bound is never reached.
   - **Tail loop flag hazard**: The `copy_buffer` tail uses `txa` before `bne` to test the loop counter (X), not the loaded byte. Without `txa`, `lda` between `dex` and `bne` overwrites the Z flag; if the buffer tail contains no `$00` bytes, the loop never exits at X=0 and writes past `$83E7`, corrupting KERNAL variables and I/O registers. See `docs/skill/commodore-pet-skill/system/screen.md` and `docs/skill/commodore-pet-skill/code/standard.md` for the full flag-semantics rule.
+
+- **AD-8 Viewer character-set and render-mode controls**
+  - **Decision**: The viewer text mode defaults to SCREEN (raw screen codes, no conversion) and adds an ASCII render mode that translates file bytes to screen codes for the active character set. UPPER/LOWER character-set switching uses read-modify-write on VIA PCR (`$E84C`) bits 3:1, preserving CB2. On entry `op_view` saves the PCR charset bits and applies the viewer's persisted charset flag; on exit it restores them, always returning to the uppercase set. The header and footer fixed labels render as uppercase in either set via a `view_char_offset` byte (`$00` UPPER, `$40` LOWER) ORed into letter screen codes; the header filename is converted once and intentionally follows the active charset as a visible indicator. `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens.
+  - **Rationale**: Raw screen-code display is the natural default for a byte viewer on a PET. ASCII translation with charset awareness lets users read text files correctly in either set. Saving and restoring PCR keeps the machine usable after exit and avoids leaving the drive's NDAC line in an unknown state. Inverse-video uppercase for lowercase ASCII letters in the uppercase set keeps lowercase text visible without adding glyphs.
+  - **Trade-off**: The PCR save/restore adds a seam in `op_view` that must be honoured on every exit path. The `view_char_offset` mechanism assumes label letters are written as screen codes in the `$01`-`$1A` range, so any new label must apply the offset or it will misrender in LOWER.
 
 ## Error Handling
 

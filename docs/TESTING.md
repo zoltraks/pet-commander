@@ -28,7 +28,7 @@ The DASM run must finish with `Complete. (0)` and no errors.
 **Header and size check**
 
 Confirm the first two bytes of `build/commander.prg` are `01 04` (load address `$0401`).
-Confirm the build size is in the expected range (about 9.2 KB for the current feature set, which includes the viewer with bordered frame layout, its 2 KB chunk buffer, and the Present/Blit module). A large unexpected change in size is a signal to investigate.
+Confirm the build size is in the expected range (about 9.4 KB for the current feature set, which includes the viewer with bordered frame layout, charset and render-mode controls, its 2 KB chunk buffer, and the Present/Blit module). A large unexpected change in size is a signal to investigate.
 
 **Smoke run**
 
@@ -67,7 +67,7 @@ This loop applies to every code modification regardless of size. Work is finishe
 
 ## Fixtures
 
-`example/work.d64` is the standard fixture. It contains the program plus five sample files of mixed types (2 PRG, 3 SEQ, including one long name) so panels render real entries on first start. Regenerate it with `example/build-work-d64.sh` when sample files need to change.
+`example/work.d64` is the standard fixture. It contains the program plus sample files of mixed types (2 PRG, several SEQ including one long name, and a `README.TXT` ASCII prose file for exercising the viewer ASCII/SCREEN and UPPER/LOWER modes) so panels render real entries on first start. Regenerate it with `example/build-work-d64.sh` when sample files need to change.
 
 ## Coverage Targets
 
@@ -75,9 +75,14 @@ Automated line coverage is not applicable to this target. The qualitative target
 
 - Every keyboard binding in `SPECIFICATION.md` is exercised at least once during manual behaviour checks for a release.
 - Every DOS operation (delete, rename, copy) is exercised against the fixture and shows a status line.
-- Every viewer key (`V`, `H`, `T`, cursor up/down, cursor left/right, HOME, `E`, RUN/STOP) is exercised at least once against a PRG and a SEQ file on the fixture.
+- Every viewer key (`V`, `H`, `T`, `A`, `S`, `L`, `U`, cursor up/down, cursor left/right, HOME, `E`, RUN/STOP) is exercised at least once against a PRG and a SEQ file on the fixture.
 - The viewer open-failure path (`VIEW OPEN FAILED`) is reproduced at least once.
 - The viewer restores the panels on close; after closing, the panel state (selection, scroll, active panel) is unchanged.
+- SCREEN render mode (default): opening a file with raw screen-code content shows the bytes directly with no conversion and no dot substitution.
+- ASCII render mode: opening `README.TXT`, pressing `A`, shows ASCII prose; in UPPER, lowercase letters render as inverse-video uppercase; in LOWER, lowercase letters render normally.
+- Character-set switching: pressing `L` switches to the lowercase set; the `VIEW` header label and all footer shortcuts stay uppercase; the header filename shifts to lowercase. Pressing `U` returns to the uppercase set; the filename shifts back to uppercase.
+- Character-set restore on exit: after `E`, the panels reappear in the uppercase set; after `Q`, `READY.` appears and `PRINT FRE(0)` and a string assignment (`A$="TEST"`) succeed, confirming PCR and ZP were restored and the `$7C00` back-buffer region did not corrupt BASIC RAM.
+- Viewer state persistence: set `A` + `L`, close with `E`, reopen with `V` on another file; the viewer starts in ASCII + LOWER mode with the offset reset to zero. Set `S` + `U`, close, reopen; it starts in SCREEN + UPPER.
 - The error paths (`DRIVE NOT READY`, `STATUS READ FAILED`, `FILE EXISTS`, `VIEW OPEN FAILED`) are reproduced at least once when their code is touched.
 - Double-buffered rendering: navigation (cursor up/down, TAB switch, `L` reload), viewer scrolling, and prompt input (`N`, `C`, `D` confirmation) are all flicker-free; each frame appears complete with no partial-update window.
 - Clean BASIC exit after double buffering: after `Q`, `READY.` appears, then `PRINT FRE(0)` and a string assignment (`A$="TEST"`) succeed, confirming the `$7C00` back-buffer region did not corrupt BASIC RAM and no IRQ vector was left installed.

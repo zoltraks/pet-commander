@@ -58,6 +58,9 @@ SCREEN  = $8000
 BUFFER  = $7C00          ; 1000-byte back buffer, page-aligned; target of all drawing
 VIA_PORTB   = $E840      ; VIA port B (PB5 = VBLANK signal)
 RETRACE_BIT = $20        ; PB5 mask: LOW during VBLANK, HIGH during active display
+PCR     = $E84C          ; VIA Peripheral Control Register; bits 3:1 select charset
+PCR_U   = $0C            ; PCR bits 3:1 = 110 -> uppercase/graphics set (default)
+PCR_L   = $0E            ; PCR bits 3:1 = 111 -> lowercase/text set
 
 ; ---- Layout constants ---------------------------------
 PANEL_ROWS  = 20                ; visible directory rows in each panel
@@ -120,6 +123,8 @@ CH_Y    = $59
 CH_V    = $56
 CH_H    = $48
 CH_T    = $54
+CH_A    = $41
+CH_U    = $55
 CH_E    = $45
 CH_0    = $30
 CH_COLON = $3A
@@ -1190,6 +1195,72 @@ p2s_sub40:
 
 p2s_done:
 
+        rts
+
+; =========================================================
+; ascii_to_screen: A in ASCII -> A in screen code
+; Depends on view_charset (0=UPPER, 1=LOWER).
+; Used only in viewer text mode when view_charset_mode=1.
+; =========================================================
+
+ascii_to_screen:
+
+        cmp #$20
+        bcc a2s_dot             ; $00-$1F non-printable
+        cmp #$7F
+        beq a2s_dot             ; $7F DEL
+        cmp #$80
+        bcs a2s_dot             ; $80-$FF non-printable
+        ; $20-$7E printable ASCII
+        cmp #$41
+        bcc a2s_petscii         ; $20-$40 -> petscii_to_screen
+        cmp #$5B
+        bcc a2s_upper_az        ; $41-$5A A-Z
+        cmp #$61
+        bcc a2s_petscii         ; $5B-$60 -> petscii_to_screen
+        cmp #$7B
+        bcc a2s_lower_az        ; $61-$7A a-z
+        ; $7B-$7E -> petscii_to_screen
+a2s_petscii:
+
+        jmp petscii_to_screen
+
+a2s_upper_az:
+
+        ; A-Z: UPPER -> -$40 ($01-$1A); LOWER -> identity ($41-$5A)
+        pha                     ; save byte
+        lda view_charset
+        bne a2s_ua_lower
+        pla                     ; restore byte
+        sec
+        sbc #$40
+        rts
+a2s_ua_lower:
+
+        pla                     ; restore byte (identity)
+        rts
+
+a2s_lower_az:
+
+        ; a-z: LOWER -> -$60 ($01-$1A); UPPER -> -$60 then ORA #$80
+        pha                     ; save byte
+        lda view_charset
+        bne a2s_la_lower
+        pla                     ; restore byte
+        sec
+        sbc #$60
+        ora #$80                ; inverse-video uppercase
+        rts
+a2s_la_lower:
+
+        pla                     ; restore byte
+        sec
+        sbc #$60
+        rts
+
+a2s_dot:
+
+        lda #SC_DOT
         rts
 
 ; =========================================================
@@ -2446,18 +2517,19 @@ op_view:
         bcs ov_exit              ; empty panel
         jsr copy_name_to_savename
         jsr view_copy_fname
-        ; Init viewer state
+        ; Init per-open viewer state (modes persist across opens)
         lda #0
-        sta view_mode
         sta view_top
         sta view_top+1
         sta view_chunk_base
         sta view_chunk_base+1
         sta view_at_eof
-        jsr view_set_mode_params
+        jsr view_set_mode_params ; reads persisted view_mode
         jsr view_load_chunk
         bcs ov_exit              ; open failed, status already set
+        jsr view_apply_charset   ; save PCR charset, switch to view_charset
         jsr view_loop
+        jsr view_restore_charset ; restore PCR charset -> uppercase
         jsr full_redraw          ; restore panels
 ov_exit:
 
@@ -2511,6 +2583,51 @@ vsm_text:
         sta view_page_size
         lda #>((VIEW_ROWS-1)*VIEW_TEXT_COLS)
         sta view_page_size+1
+        rts
+
+; ---- view_set_pcr_charset: apply view_charset to PCR bits 3:1 ----
+; Read-modify-write preserves CB2 (IEEE-488 NDAC). Also sets
+; view_char_offset ($00 UPPER, $40 LOWER) for label rendering.
+
+view_set_pcr_charset:
+
+        lda PCR
+        and #$F1               ; clear bits 3:1
+        ldx view_charset
+        beq vspc_upper
+        ora #PCR_L             ; LOWER
+        ldx #$40
+        bne vspc_store
+vspc_upper:
+
+        ora #PCR_U             ; UPPER
+        ldx #$00
+vspc_store:
+
+        sta PCR
+        stx view_char_offset
+        rts
+
+; ---- view_apply_charset: save PCR bits 3:1, then switch ----
+; Called after view_load_chunk succeeds in op_view.
+
+view_apply_charset:
+
+        lda PCR
+        and #$0E               ; isolate bits 3:1
+        sta saved_pcr_cs
+        jsr view_set_pcr_charset
+        rts
+
+; ---- view_restore_charset: restore saved PCR bits 3:1 ----
+; Called after view_loop returns in op_view, before full_redraw.
+
+view_restore_charset:
+
+        lda PCR
+        and #$F1               ; clear bits 3:1
+        ora saved_pcr_cs       ; restore saved bits
+        sta PCR
         rts
 
 ; =========================================================
@@ -2639,19 +2756,43 @@ vr_hex_mode:
         jsr view_render_hex
 vr_footer:
         ; --- Footer bar (row 24) ---
-        ldx #24
-        jsr row_addr_sp
-        ldy #0
-vr_footer_loop:
-
-        lda view_footer_str,y
-        sta (sp_lo),y
-        iny
-        cpy #40
-        bne vr_footer_loop
+        jsr view_draw_footer
 vr_done:
 
         jsr present_screen
+        rts
+
+; =========================================================
+; view_draw_footer: draw footer bar (row 24) from view_footer_base
+; Letter positions (base & $7F in $01-$1A) get view_char_offset
+; so labels stay uppercase in either character set.
+; =========================================================
+
+view_draw_footer:
+
+        ldx #24
+        jsr row_addr_sp
+        ldy #0
+vdf_loop:
+
+        lda view_footer_base,y
+        and #$7F
+        cmp #$01
+        bcc vdf_plain
+        cmp #$1B
+        bcs vdf_plain
+        lda view_footer_base,y
+        ora view_char_offset
+        jmp vdf_store
+vdf_plain:
+
+        lda view_footer_base,y
+vdf_store:
+
+        sta (sp_lo),y
+        iny
+        cpy #40
+        bne vdf_loop
         rts
 
 ; =========================================================
@@ -2682,17 +2823,22 @@ vdh_fill:
         cpy #39
         bne vdh_fill
         ; Write "VIEW" at cols 3-6 (reversed screen codes)
+        ; Label letters get view_char_offset so they stay uppercase in LOWER
         ldy #3
         lda #$96               ; 'V' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$89               ; 'I' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$85               ; 'E' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$97               ; 'W' reversed
+        ora view_char_offset
         sta (sp_lo),y
         ; Write filename at cols 9.. (reversed)
         ldy #9
@@ -2716,27 +2862,34 @@ vdh_mode:
         ; Text mode: "TEXT" reversed at cols 32-35
         ldy #32
         lda #$94               ; 'T' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$85               ; 'E' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$98               ; 'X' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$94               ; 'T' reversed
+        ora view_char_offset
         sta (sp_lo),y
         rts
 vdh_hex:
         ; Hex mode: "HEX" reversed at cols 33-35
         ldy #33
         lda #$88               ; 'H' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$85               ; 'E' reversed
+        ora view_char_offset
         sta (sp_lo),y
         iny
         lda #$98               ; 'X' reversed
+        ora view_char_offset
         sta (sp_lo),y
         rts
 
@@ -2885,16 +3038,15 @@ vrt_data_loop:
         cpy vr_valid
         bcs vrt_pad
         sty vr_ytmp           ; save data index
+        lda view_charset_mode
+        bne vrt_ascii         ; ASCII render: translate
+        ; SCREEN render: store raw byte as screen code (no conversion)
         lda (dp_lo),y
-        cmp #$20
-        bcc vrt_data_dot
-        cmp #$7F
-        bcs vrt_data_dot
-        jsr petscii_to_screen
         jmp vrt_data_store
-vrt_data_dot:
+vrt_ascii:
 
-        lda #SC_DOT
+        lda (dp_lo),y
+        jsr ascii_to_screen
 vrt_data_store:
 
         ldy vr_col
@@ -3145,6 +3297,14 @@ vl_wait:
         beq vl_hex
         cmp #CH_T
         beq vl_text
+        cmp #CH_A
+        beq vl_ascii
+        cmp #CH_S
+        beq vl_screen
+        cmp #CH_L
+        beq vl_lower
+        cmp #CH_U
+        beq vl_upper
         cmp #K_UP
         beq vl_up
         cmp #K_DOWN
@@ -3171,6 +3331,28 @@ vl_text:
         lda #0
         sta view_mode
         jsr view_set_mode_params
+        jmp view_loop
+vl_ascii:
+
+        lda #1
+        sta view_charset_mode
+        jmp view_loop
+vl_screen:
+
+        lda #0
+        sta view_charset_mode
+        jmp view_loop
+vl_lower:
+
+        lda #1
+        sta view_charset
+        jsr view_set_pcr_charset
+        jmp view_loop
+vl_upper:
+
+        lda #0
+        sta view_charset
+        jsr view_set_pcr_charset
         jmp view_loop
 vl_up:
 
@@ -3406,7 +3588,11 @@ vpu_done:
 ; Viewer state and buffers
 ; =========================================================
 
-view_mode:       byte 0          ; 0=text, 1=hex
+view_mode:       byte 0          ; 0=text, 1=hex (persisted across opens)
+view_charset_mode: byte 0        ; 0=SCREEN (raw), 1=ASCII (translate) (persisted)
+view_charset:    byte 0          ; 0=UPPER, 1=LOWER (persisted)
+view_char_offset: byte 0         ; $00 UPPER, $40 LOWER; ORed into label letters
+saved_pcr_cs:    byte 0          ; PCR bits 3:1 saved on viewer entry
 view_top:        word 0          ; byte offset of visible top
 view_chunk_base: word 0          ; byte offset of chunk start
 view_chunk_len:  word 0          ; bytes loaded in chunk
@@ -3441,25 +3627,34 @@ whb_tmp:         byte 0
 bth_tmp:         byte 0
 
 ; Viewer strings
-; Footer bar (row 24): 40 screen codes, mixed reverse/normal video
-; $E1=HB_RLEFT border, $61=HB_LEFT border
-; T(normal) EXT(rev) SP(rev) H(normal) EX(rev) pad(rev) E(normal) XIT(rev)
-view_footer_str:
-        byte $E1                       ; col 0: left border (reversed half-block)
-        byte $14                       ; col 1: 'T' normal video
+; Footer bar (row 24): 40 base screen codes (uppercase-set form).
+; view_draw_footer applies view_char_offset to letter positions
+; (base & $7F in $01-$1A) so labels stay uppercase in LOWER.
+; $E1=HB_RLEFT border, $61=HB_LEFT border.
+; Layout: T(ext) H(ex) A(scii) S(creen) L(ower) U(pper) E(xit)
+view_footer_base:
+        byte $E1                       ; col 0: left border
+        byte $14                       ; col 1: 'T' normal
         byte $85,$98,$94               ; cols 2-4: 'EXT' reversed
         byte $A0                       ; col 5: reversed space
-        byte $08                       ; col 6: 'H' normal video
+        byte $08                       ; col 6: 'H' normal
         byte $85,$98                   ; cols 7-8: 'EX' reversed
         byte $A0                       ; col 9: reversed space
-        byte $A0,$A0,$A0,$A0,$A0       ; cols 10-14: reversed space pad
-        byte $A0,$A0,$A0,$A0,$A0       ; cols 15-19: reversed space pad
-        byte $A0,$A0,$A0,$A0,$A0       ; cols 20-24: reversed space pad
-        byte $A0,$A0,$A0,$A0,$A0       ; cols 25-29: reversed space pad
-        byte $A0,$A0,$A0,$A0,$A0       ; cols 30-34: reversed space pad
-        byte $05                       ; col 35: 'E' normal video
+        byte $01                       ; col 10: 'A' normal
+        byte $93,$83,$89,$89           ; cols 11-14: 'SCII' reversed
+        byte $A0                       ; col 15: reversed space
+        byte $13                       ; col 16: 'S' normal
+        byte $83,$92,$85,$85,$8E       ; cols 17-21: 'CREEN' reversed
+        byte $A0                       ; col 22: reversed space
+        byte $0C                       ; col 23: 'L' normal
+        byte $8F,$97,$85,$92           ; cols 24-27: 'OWER' reversed
+        byte $A0                       ; col 28: reversed space
+        byte $15                       ; col 29: 'U' normal
+        byte $90,$90,$85,$92           ; cols 30-33: 'PPER' reversed
+        byte $A0                       ; col 34: reversed space
+        byte $05                       ; col 35: 'E' normal
         byte $98,$89,$94               ; cols 36-38: 'XIT' reversed
-        byte $61                       ; col 39: right border (left half-block)
+        byte $61                       ; col 39: right border
 msg_view_err:      byte "VIEW OPEN FAILED",0
 
 ; =========================================================

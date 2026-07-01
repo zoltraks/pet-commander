@@ -53,11 +53,15 @@ Two-element parallel arrays, index 0 = left, 1 = right. Defined near the top of 
 
 ### Viewer state
 
-Owned by the viewer module. Separate from panel state. Discarded on viewer close.
+Owned by the viewer module. Separate from panel state. `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens within one program run; the rest reset on each open.
 
 | Symbol             | Size     | Meaning                                              |
 | ------------------ | -------- | ---------------------------------------------------- |
-| `view_mode`        | 1 byte   | `0` = text display, `1` = hex display.               |
+| `view_mode`        | 1 byte   | `0` = text display, `1` = hex display. Persisted.    |
+| `view_charset_mode`| 1 byte   | `0` = SCREEN (raw screen codes), `1` = ASCII (translate). Persisted. |
+| `view_charset`     | 1 byte   | `0` = UPPER, `1` = LOWER. Persisted.                 |
+| `view_char_offset` | 1 byte   | `$00` when UPPER, `$40` when LOWER. ORed into label letter screen codes so labels render uppercase in either set. |
+| `saved_pcr_cs`     | 1 byte   | PCR bits 3:1 saved on viewer entry, restored on exit. |
 | `view_top`         | 2 bytes  | Byte offset of the top-left visible byte.            |
 | `view_chunk_base`  | 2 bytes  | Byte offset of the first byte in the chunk buffer.   |
 | `view_chunk_len`   | 2 bytes  | Number of valid bytes in the chunk buffer.           |
@@ -89,6 +93,9 @@ These values must not be hard-coded ad hoc elsewhere. They are defined once at t
 | `VIEW_HEX_COLS`  | `8`  | Bytes per hex-mode row in the viewer.           |
 | `VIEW_CHUNK` | `2048`  | Chunk buffer size for partial file loading.      |
 | `VIEW_LFN`   | `3`     | Logical file number used by the viewer.          |
+| `PCR`        | `$E84C` | VIA Peripheral Control Register; bits 3:1 select the character set. |
+| `PCR_U`      | `$0C`   | PCR bits 3:1 = 110 -> uppercase/graphics set.    |
+| `PCR_L`      | `$0E`   | PCR bits 3:1 = 111 -> lowercase/text set.        |
 | `sp_lo/hi`   | `$FB/$FC` | Borrowed primary indirect pointer.             |
 | `dp_lo/hi`   | `$FD/$FE` | Borrowed secondary indirect pointer.           |
 
@@ -176,11 +183,28 @@ Because CBM-DOS sequential files have no backward seek, scrolling up past the ch
 
 `view_render` clears the screen, draws a header bar on row 0, draws a content frame (top border row 1, side borders rows 2-22, bottom border row 23), renders `VIEW_ROWS` (21) content rows (rows 2-22), and draws a footer bar on row 24.
 
-- **Header bar (row 0)**: Reverse-video bar with half-block borders (`$E1` left, `$61` right). Shows `VIEW`, the filename, and the current mode (`TEXT` or `HEX`) right-aligned. All content is reversed (bit 7 set).
-- **Footer bar (row 24)**: Reverse-video bar with half-block borders. Shows shortcut labels: `T`EXT, `H`EX, `E`XIT. The shortcut letters T, H, E are in normal video; the rest is reversed.
-- **Content frame**: Center-line box drawing. Corners `$70`/`$6E` (top), `$6D`/`$7D` (bottom). Horizontal `$40`, vertical `$5D`. In hex mode, T-junctions `$72` (down) at columns 5, 17, 29 and `$71` (up) at column 34 on the top border; `$71` (up) at 5, 17, 29, 34 on the bottom border; vertical dividers `$5D` at 5, 17, 29, 34 on content rows. In text mode, no internal dividers.
-- **Text mode**: each content row renders `VIEW_TEXT_COLS` (38) bytes from the chunk buffer at columns 1-38, converting each byte with `petscii_to_screen`. Bytes below `$20` or at/above `$7F` render as a dot placeholder. Bytes past the chunk or EOF render as spaces.
+- **Header bar (row 0)**: Reverse-video bar with half-block borders (`$E1` left, `$61` right). Shows `VIEW`, the filename, and the current mode (`TEXT` or `HEX`) right-aligned. All content is reversed (bit 7 set). The fixed labels `VIEW`, `TEXT`, and `HEX` are written as screen codes and have `view_char_offset` ORed in so they render as uppercase letters in either character set. The filename is converted once via `petscii_to_screen` and is not re-translated on a charset switch, so it follows the active set (e.g. `FILE.TXT` shows as `file.txt` in LOWER).
+- **Footer bar (row 24)**: Reverse-video bar with half-block borders. `view_draw_footer` writes 40 bytes from the `view_footer_base` template, applying `view_char_offset` only to positions where `(base & $7F)` is in `$01`-`$1A` (letter positions), so the shortcut labels `TEXT`, `HEX`, `ASCII`, `SCREEN`, `LOWER`, `UPPER`, `EXIT` render as uppercase in either set. Borders (`$E1`, `$61`) and reversed space (`$A0`) pass through unchanged. The shortcut letters T, H, A, S, L, U, E are in normal video; the rest is reversed.
+- **Content frame**: Center-line box drawing. Corners `$70`/`$6E` (top), `$6D`/`$7D` (bottom). Horizontal `$40`, vertical `$5D`. In hex mode, T-junctions `$72` (down) at columns 5, 17, 29 and `$71` (up) at column 34 on the top border; `$71` (up) at 5, 17, 29, 34 on the bottom border; vertical dividers `$5D` at 5, 17, 29, 34 on content rows. In text mode, no internal dividers. All frame codes are identical in both character sets.
+- **Text mode**: each content row renders `VIEW_TEXT_COLS` (38) bytes from the chunk buffer at columns 1-38. In SCREEN mode (`view_charset_mode = 0`) the raw byte is stored directly as a screen code with no conversion and no dot substitution (bit 7 yields reverse video). In ASCII mode (`view_charset_mode = 1`) each byte is translated by `ascii_to_screen`. Bytes past the chunk or EOF render as spaces.
 - **Hex mode**: each content row shows a 4-digit hex address at cols 1-4, two groups of 4 hex byte pairs at cols 6-16 and 18-28 (via `write_hex_byte`), and two groups of 4 raw bytes as screen codes at cols 30-33 and 35-38. The ASCII columns store the raw byte value directly (no `petscii_to_screen`, no dot substitution). Bytes past the chunk or EOF render as spaces.
+
+### ASCII to screen
+
+`ascii_to_screen` translates a file byte in A to a screen code, depending on `view_charset`. It is used only in text mode when `view_charset_mode = 1`.
+
+- `$00`-`$1F`, `$7F`, `$80`-`$FF`: non-printable -> `SC_DOT` (`$2E`).
+- `$20`-`$40`, `$5B`-`$60`, `$7B`-`$7E`: punctuation/digits -> `petscii_to_screen` mapping.
+- `$41`-`$5A` (`A`-`Z`): UPPER -> subtract `$40` -> `$01`-`$1A`. LOWER -> identity (`$41`-`$5A`).
+- `$61`-`$7A` (`a`-`z`): LOWER -> subtract `$60` -> `$01`-`$1A`. UPPER -> subtract `$60` then `ora #$80` -> `$81`-`$9A` (reverse-video uppercase, so lowercase stays visible).
+
+### Character set switching
+
+`view_set_pcr_charset` reads PCR, clears bits 3:1 with `and #$F1`, ORs in `PCR_U` (`$0C`) or `PCR_L` (`$0E`) based on `view_charset`, and writes PCR. It also sets `view_char_offset` to `$00` (UPPER) or `$40` (LOWER). The read-modify-write preserves CB2 (IEEE-488 NDAC).
+
+`view_apply_charset` saves the current PCR bits 3:1 (`and #$0E`) into `saved_pcr_cs`, then calls `view_set_pcr_charset`. It is called after `view_load_chunk` succeeds in `op_view`.
+
+`view_restore_charset` reads PCR, clears bits 3:1, ORs in `saved_pcr_cs`, and writes PCR. It is called after `view_loop` returns in `op_view`, before `full_redraw`. On open failure `view_apply_charset` is not called, so PCR is unchanged and the failure status renders in the uppercase set.
 
 ### Byte to hex
 
@@ -208,6 +232,10 @@ Keys are read with `GETIN` and compared against PETSCII constants. Bindings:
 | `V`            | `CH_V $56` | Open the viewer on the selected file.   |
 | `H`            | `CH_H $48` | Switch the viewer to hex display.       |
 | `T`            | `CH_T $54` | Switch the viewer to text display.      |
+| `A`            | `CH_A $41` | Switch the viewer text mode to ASCII render. |
+| `S`            | `CH_S $53` | Switch the viewer text mode to SCREEN render. |
+| `L`            | `CH_L $4C` | Switch the viewer character set to LOWER. |
+| `U`            | `CH_U $55` | Switch the viewer character set to UPPER. |
 | `E`            | `CH_E $45` | Exit the viewer, restore panels.        |
 | Cursor left    | `K_LEFT $9D` | Viewer page up.                       |
 | Cursor right   | `K_RIGHT $1D` | Viewer page down.                    |
@@ -216,7 +244,7 @@ Text prompts (`prompt_text`): accept up to 16 PETSCII characters into `prompt_bu
 
 Yes/no prompt (`prompt_yn`): RETURN or `Y` confirms; any other key cancels.
 
-Viewer keys (`view_loop`): `H` switches to hex, `T` to text, cursor up/down scroll one row, cursor left/right scroll one page, HOME jumps to top, `E`/RUN/STOP closes the viewer. `Q` is ignored in the viewer (reserved for main program quit). The viewer reads keys with `GETIN` from the keyboard (default input after `CLRCHN`).
+Viewer keys (`view_loop`): `H` switches to hex, `T` to text, `A` switches text render to ASCII, `S` switches text render to SCREEN, `L` switches the character set to LOWER, `U` switches to UPPER, cursor up/down scroll one row, cursor left/right scroll one page, HOME jumps to top, `E`/RUN/STOP closes the viewer. `Q` is ignored in the viewer (reserved for main program quit). The viewer reads keys with `GETIN` from the keyboard (default input after `CLRCHN`). `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens; `view_top` and chunk state reset on each open.
 
 ## DOS Command Construction
 
