@@ -6,9 +6,9 @@
 
 This document records what is specific to PET Commander: project structure, the build and test workflow, project conventions, and the few places where this project deliberately overrides the general standard.
 
-General 6502, DASM, and PET conventions -- naming, formatting, comments, section banners, zero-page discipline, flag semantics, KERNAL and hardware facts -- are defined by the commodore-pet-skill, which is the source of truth for this project and is not repeated here. Where a rule in this file conflicts with that general standard, the rule in this file wins for PET Commander code.
+General 6502, DASM, and PET conventions -- naming, formatting, comments, section banners, zero-page discipline, flag semantics, KERNAL and hardware facts -- are defined by the commodore-pet-skill, which is the source of truth for this project and is not repeated here. Consult the relevant `docs/skill/commodore-pet-skill/` sections before writing or modifying code. Where a rule in this file conflicts with that general standard, the rule in this file wins for PET Commander code.
 
-PET Commander is a single-source DASM program targeting the Commodore PET 3032 (32 KB RAM, 40x25 text, screen RAM at $8000). It builds to PRG and loads at $0401.
+PET Commander is a single-source DASM program targeting the Commodore PET 3032. Hardware specs, PRG format, and load address conventions are defined by the skill.
 
 ## Project Structure
 
@@ -61,26 +61,15 @@ These supplement or override the general standard for PET Commander code.
 ## Build
 
 - Development and release build: `./build.sh` (Docker `dasm` image preferred, local `dasm` fallback).
-- Direct invocation: `dasm src/commander.asm -f1 -o build/commander.prg`.
 - Refresh the example disk: `example/build-work-d64.sh` (run automatically by `build.sh`).
+- For DASM command-line options and Docker invocation, see `docs/skill/commodore-pet-skill/utility/dasm-assembler.md`.
 
 ## Testing
 
-There is no host-side unit-test framework for this target. Verification is build plus emulator behaviour checks, defined in `TESTING.md`.
-
-- **Build verification**: `./build.sh` must report `Complete. (0)`; the PRG must load at `$0401`.
-- **Headless smoke**: `xpet -warp` run that proves stability.
-- **Behaviour check**: graphical `xpet` session exercising the changed binding or operation against `example/work.d64`.
-- **Characterisation**: for parser/formatter changes, snapshot entry tables and screen RAM via the VICE monitor before and after.
+Verification is defined in `TESTING.md`. Run the verification loop after every code change.
 
 ## Dependencies
 
-This project vendors no libraries. External tools are required at build and run time only.
-
-| Tool   | Role                                  | Notes                                  |
-| ------ | ------------------------------------- | -------------------------------------- |
-| DASM   | Assemble `src/commander.asm` to PRG   | Docker image `dasm` or local binary.   |
-| VICE   | `xpet` to run, `c1541` to build disks | 3.7+ recommended; auto-finds ROMs.     |
-| Docker | Optional container host for DASM      | Used only if the `dasm` image exists.  |
+This project vendors no libraries. External tools (DASM, VICE) are described in the skill. Docker is optionally used as a container host for DASM when the `dasm` image exists.
 
 Do not add vendored dependencies without a need and a license check per `COPYRIGHTS.md`.

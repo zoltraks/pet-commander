@@ -27,7 +27,10 @@ These hold historical or on-demand material. Do not read them automatically or t
 - `docs/report/` - on-demand reports.
 - `docs/archive/` - retired documents.
 - `docs/reference/` - external reference material, consulted only for the topics it covers.
-- `docs/skill/commodore-pet-skill/` - the commodore-pet-skill git submodule (upstream: `https://github.com/zoltraks/commodore-pet-skill`), consulted only for the topics it covers. Never edit it by hand; it is checked out at a pinned commit and changes only by updating the submodule pointer. See `README.md` ("Cloning this repository") and `REFERENCES.md`.
+
+## Submodules
+
+- `docs/skill/commodore-pet-skill/` - the commodore-pet-skill git submodule (upstream: `https://github.com/zoltraks/commodore-pet-skill`). This is the natural location for skills used in this project and is not restricted from reading. Consult it when working on code (see `GUIDELINES.md` "Sources of Truth"). Never edit it by hand; it is checked out at a pinned commit and changes only by updating the submodule pointer. See `README.md` ("Cloning this repository") and `REFERENCES.md`.
 
 ## Notes
 

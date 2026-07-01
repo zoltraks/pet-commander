@@ -10,6 +10,7 @@ Before any change, and again whenever the model or session changes:
 
 - Read `README.md`, then `GUIDELINES.md`, then every file in its Sources of Truth list.
 - Read `standard/asm-6502-development.md` before writing code.
+- Consult the relevant `docs/skill/commodore-pet-skill/` sections before writing code.
 - Do not assume prior context.
 
 ## Standard Workflow Cycle

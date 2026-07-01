@@ -22,6 +22,7 @@ These guidelines govern AI-assisted and human development of PET Commander.
   - `REFERENCES.md`: External hardware, KERNAL, and tooling references.
 
 - **Engineering Standard**: `standard/asm-6502-development.md` is authoritative for how 6502 assembly is written in this project. Read it before writing or modifying any code.
+- **Commodore PET Skill**: The `docs/skill/commodore-pet-skill/` submodule is the source of truth for PET 3032 hardware facts, KERNAL routines, DASM syntax, and VICE usage. Consult the relevant sections before writing or modifying any code.
 
 - **Output Stability**: The assembled `build/commander.prg` must keep load address `$0401` and a working `SYS 1038` entry. This is a non-negotiable constraint recorded in `SPECIFICATION.md` and `REFACTORING.md`.
 
@@ -114,7 +115,8 @@ This applies to every code modification regardless of size.
 ## Knowledge Exploration Boundaries
 
 - Treat files and directories listed in `IGNORE.md` as excluded from analysis unless explicitly instructed.
-- Do not read from `change/`, `plan/`, `refactoring/`, `report/`, `archive/`, `reference/`, or `skill/` automatically. Read them only when the relevant work requires it or the user requests it.
+- Do not read from `change/`, `plan/`, `refactoring/`, `report/`, `archive/`, or `reference/` automatically. Read them only when the relevant work requires it or the user requests it.
+- `docs/skill/` is the natural location for skills used in this project. It is not restricted from reading. Consult the relevant sections before writing or modifying code. Never edit the submodule by hand.
 - `build/` and `example/work.d64` are generated artifacts. They are not authoritative ground truth.
 
 ## Memorization Convention
