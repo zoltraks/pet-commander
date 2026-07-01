@@ -43,7 +43,7 @@ Each module is a labelled section of `src/commander.asm`. Responsibilities are k
 | File operations      | `op_delete`, `op_rename`, `op_copy`, `op_cancel`   | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.     |
 | DOS channel          | `send_dos_cmd`, `read_dos_status`     | Send a command on channel 15 and read back the status string.   |
 | Prompts              | `prompt_text`, `prompt_yn`, `draw_prompt_label`, `show_prompt_buf` | Bottom-line text entry and yes/no confirmation.                 |
-| Viewer               | `op_view`, `view_load_chunk`, `view_render`, `view_loop`, `view_scroll_down`, `view_scroll_up`, `view_home`, `byte_to_hex` | Modal file viewer with text and hex display, chunk-based partial load, scrolling. |
+| Viewer               | `op_view`, `view_load_chunk`, `view_render`, `view_draw_frame`, `view_render_text`, `view_render_hex`, `view_loop`, `view_scroll_down`, `view_scroll_up`, `view_page_down`, `view_page_up`, `view_home`, `byte_to_hex` | Modal file viewer with bordered frame, header/footer bars, text and hex display, chunk-based partial load, row and page scrolling. |
 | Data buffers         | `entries_p0`, `entries_p1`, `cmd_buf`, `prompt_buf`, `savename`, `status_buf`, `view_chunk` | Per-panel entry tables, scratch buffers, and the viewer chunk buffer.                     |
 
 What modules must not do:
@@ -64,7 +64,7 @@ State is separated into three domains.
 
 Scratch buffers (`cmd_buf`, `prompt_buf`, `savename`, `status_buf`) are transient and owned by whichever operation is running.
 
-The viewer owns its own state domain: `view_mode`, `view_top`, `view_chunk_base`, `view_chunk_len`, `view_at_eof`, `view_fname`, and the `view_chunk` buffer. This state is separate from panel state and is discarded on viewer close.
+The viewer owns its own state domain: `view_mode`, `view_top`, `view_chunk_base`, `view_chunk_len`, `view_at_eof`, `view_row_size`, `view_screen_size`, `view_page_size`, `view_fname`, `view_fname_len`, and the `view_chunk` buffer. This state is separate from panel state and is discarded on viewer close.
 
 ## Data Flow
 

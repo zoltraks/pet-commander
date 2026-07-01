@@ -66,10 +66,11 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **FR-M10**: `C` copies the selected file to a new name using a bottom-line text prompt.
 - **FR-M11**: After every DOS command, the drive status channel is read and shown on the bottom row.
 - **FR-M12**: `Q` or RUN/STOP quits to BASIC with the machine left usable.
-- **FR-M13**: `V` opens a modal viewer for the selected file. The viewer shows file content in text or hex display.
+- **FR-M13**: `V` opens a modal viewer for the selected file. The viewer uses a bordered frame with a reverse-video header bar (showing `VIEW`, filename, and mode) and a reverse-video footer bar (showing shortcuts). Content is shown in text or hex display.
 - **FR-M14**: `H` switches the viewer to hexadecimal display; `T` switches back to text display. The current byte offset is preserved across the switch.
-- **FR-M15**: Cursor up/down scrolls the viewer content one row at a time. HOME jumps to the start of the file. Scrolling clamps at the end of the file.
+- **FR-M15**: Cursor up/down scrolls the viewer content one row at a time. Cursor left/right scrolls by a full page. In text mode, page scroll overlaps by one line (the last line of the previous page is the first line of the new page). In hex mode, page scroll has no overlap. HOME jumps to the start of the file. Scrolling clamps at the end of the file.
 - **FR-M16**: The viewer loads file data in fixed-size chunks from disk. Scrolling within the chunk does not require disk I/O. Scrolling past the chunk boundary reloads from disk.
+- **FR-M17**: `E` or RUN/STOP exits the viewer and restores the panels. `Q` is reserved for quitting the main program and does not exit the viewer.
 
 ### Should
 
@@ -96,7 +97,7 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 
 - **NFR-Performance**: The main loop must stay responsive on a 1 MHz 6502. Screen redraws must not introduce visible lag during navigation.
 - **NFR-FlickerFree**: Screen updates must be flicker-free. All drawing composes into a back buffer in RAM; a single atomic copy transfers the complete frame to screen RAM during VBLANK. The user never sees a partially updated screen during navigation, file operations, viewer scrolling, or prompt input.
-- **NFR-Footprint**: The assembled program plus its buffers must fit comfortably in PET 3032 RAM. Current build is about 8.8 KB of code and data, including the viewer, its 2 KB chunk buffer, and the Present/Blit module. The 1000-byte back buffer lives at a fixed high-RAM address (`$7C00`) outside the PRG.
+- **NFR-Footprint**: The assembled program plus its buffers must fit comfortably in PET 3032 RAM. Current build is about 9.2 KB of code and data, including the viewer with bordered frame layout, its 2 KB chunk buffer, and the Present/Blit module. The 1000-byte back buffer lives at a fixed high-RAM address (`$7C00`) outside the PRG.
 - **NFR-Stability**: The program must not perform runaway memory writes. It must run for tens of millions of cycles under warp without crashing.
 - **NFR-Reentrancy of BASIC**: Borrowed zero-page bytes must be saved on entry and restored on exit so BASIC remains usable.
 - **NFR-Output stability**: The PRG load address must remain `$0401` and `SYS 1038` must land on the start vector.
@@ -109,7 +110,7 @@ Requirements use MoSCoW prioritisation. Each has a unique ID.
 - **UC-3 Rename a file**: The user selects a file, presses `N`, types a new name, and presses RETURN. The program issues the DOS rename, reloads the panel, and shows status.
 - **UC-4 Copy a file**: The user selects a file, presses `C`, types a destination name, and presses RETURN. The program issues the DOS copy, reloads the panel, and shows status.
 - **UC-5 Quit cleanly**: The user presses `Q`. The program restores borrowed zero page and returns to BASIC with `READY.`
-- **UC-6 View a file**: The user selects a file and presses `V`. The viewer opens showing the start of the file in text mode. The user presses `H` to switch to hex, scrolls with cursor keys, presses `T` to return to text, and presses `Q` to close. The panels reappear unchanged.
+- **UC-6 View a file**: The user selects a file and presses `V`. The viewer opens showing the start of the file in text mode inside a bordered frame with header and footer bars. The user presses `H` to switch to hex, scrolls with cursor up/down (one row) or cursor left/right (one page), presses `T` to return to text, and presses `E` to close. The panels reappear unchanged.
 
 ## Quality Targets
 

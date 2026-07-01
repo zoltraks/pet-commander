@@ -64,6 +64,7 @@ Owned by the viewer module. Separate from panel state. Discarded on viewer close
 | `view_at_eof`      | 1 byte   | Nonzero if the last chunk read reached end of file.  |
 | `view_row_size`    | 1 byte   | Bytes per visible row (`VIEW_TEXT_COLS` or `VIEW_HEX_COLS`). |
 | `view_screen_size` | 2 bytes  | Total bytes per screen (`VIEW_ROWS * view_row_size`). |
+| `view_page_size`   | 2 bytes  | Bytes per page scroll. Text: `(VIEW_ROWS-1) * VIEW_TEXT_COLS = 760`. Hex: `VIEW_ROWS * VIEW_HEX_COLS = 168`. |
 | `view_fname`       | 16 bytes | Copy of the file name being viewed.                  |
 | `view_fname_len`   | 1 byte   | Length of the file name in `view_fname`.             |
 | `view_chunk`       | 2048 bytes | Chunk buffer for partial file loading.             |
@@ -83,8 +84,8 @@ These values must not be hard-coded ad hoc elsewhere. They are defined once at t
 | `PANEL_INNER`| `18`    | Inner content columns (excluding frame borders). |
 | `MAX_ENTRY`  | `64`    | Maximum entries per panel.                       |
 | `ENT_SIZE`   | `20`    | Bytes per entry record.                          |
-| `VIEW_ROWS`  | `22`    | Visible content rows in the viewer.              |
-| `VIEW_TEXT_COLS` | `40` | Columns per text-mode row in the viewer.       |
+| `VIEW_ROWS`  | `21`    | Visible content rows in the viewer (rows 2-22 inside frame). |
+| `VIEW_TEXT_COLS` | `38` | Columns per text-mode row (cols 1-38 inside frame). |
 | `VIEW_HEX_COLS`  | `8`  | Bytes per hex-mode row in the viewer.           |
 | `VIEW_CHUNK` | `2048`  | Chunk buffer size for partial file loading.      |
 | `VIEW_LFN`   | `3`     | Logical file number used by the viewer.          |
@@ -165,16 +166,21 @@ The chunk buffer covers `VIEW_CHUNK` (2048) bytes starting at `view_chunk_base`.
 
 - `view_scroll_down` adds `view_row_size` to `view_top`. If the window extends past the chunk and the file is not at EOF, it reloads the chunk at the new `view_top`. If at EOF, it clamps `view_top` back.
 - `view_scroll_up` subtracts `view_row_size` from `view_top`, clamped at 0. If `view_top` falls below `view_chunk_base`, it reloads the chunk at the new `view_top`.
+- `view_page_down` adds `view_page_size` to `view_top`. In text mode, `view_page_size = (VIEW_ROWS - 1) * VIEW_TEXT_COLS = 760` (20 rows, 1-line overlap). In hex mode, `view_page_size = VIEW_ROWS * VIEW_HEX_COLS = 168` (21 rows, no overlap). Reload and clamp logic matches `view_scroll_down`.
+- `view_page_up` subtracts `view_page_size` from `view_top`, clamped at 0. Reload logic matches `view_scroll_up`.
 - `view_home` sets `view_top` and `view_chunk_base` to 0 and reloads.
 
 Because CBM-DOS sequential files have no backward seek, scrolling up past the chunk re-opens the file and skips forward byte-by-byte. This is the documented trade-off for chunk-based loading.
 
 ### Viewer rendering
 
-`view_render` clears the screen, draws a title bar on row 0 showing the file name and current mode, renders `VIEW_ROWS` content rows (rows 1-22), and draws a help bar on row 24.
+`view_render` clears the screen, draws a header bar on row 0, draws a content frame (top border row 1, side borders rows 2-22, bottom border row 23), renders `VIEW_ROWS` (21) content rows (rows 2-22), and draws a footer bar on row 24.
 
-- **Text mode**: each row renders `VIEW_TEXT_COLS` (40) bytes from the chunk buffer, converting each byte with `petscii_to_screen`. Bytes below `$20` or at/above `$7F` render as a dot placeholder. Bytes past the chunk or EOF render as spaces.
-- **Hex mode**: each row shows a 4-digit hex offset, 8 hex byte pairs (via `byte_to_hex`), and 8 ASCII characters (dot for non-printable). Bytes past the chunk or EOF render as spaces.
+- **Header bar (row 0)**: Reverse-video bar with half-block borders (`$E1` left, `$61` right). Shows `VIEW`, the filename, and the current mode (`TEXT` or `HEX`) right-aligned. All content is reversed (bit 7 set).
+- **Footer bar (row 24)**: Reverse-video bar with half-block borders. Shows shortcut labels: `T`EXT, `H`EX, `E`XIT. The shortcut letters T, H, E are in normal video; the rest is reversed.
+- **Content frame**: Center-line box drawing. Corners `$70`/`$6E` (top), `$6D`/`$7D` (bottom). Horizontal `$40`, vertical `$5D`. In hex mode, T-junctions `$72` (down) at columns 5, 17, 29 and `$71` (up) at column 34 on the top border; `$71` (up) at 5, 17, 29, 34 on the bottom border; vertical dividers `$5D` at 5, 17, 29, 34 on content rows. In text mode, no internal dividers.
+- **Text mode**: each content row renders `VIEW_TEXT_COLS` (38) bytes from the chunk buffer at columns 1-38, converting each byte with `petscii_to_screen`. Bytes below `$20` or at/above `$7F` render as a dot placeholder. Bytes past the chunk or EOF render as spaces.
+- **Hex mode**: each content row shows a 4-digit hex address at cols 1-4, two groups of 4 hex byte pairs at cols 6-16 and 18-28 (via `write_hex_byte`), and two groups of 4 raw bytes as screen codes at cols 30-33 and 35-38. The ASCII columns store the raw byte value directly (no `petscii_to_screen`, no dot substitution). Bytes past the chunk or EOF render as spaces.
 
 ### Byte to hex
 
@@ -202,12 +208,15 @@ Keys are read with `GETIN` and compared against PETSCII constants. Bindings:
 | `V`            | `CH_V $56` | Open the viewer on the selected file.   |
 | `H`            | `CH_H $48` | Switch the viewer to hex display.       |
 | `T`            | `CH_T $54` | Switch the viewer to text display.      |
+| `E`            | `CH_E $45` | Exit the viewer, restore panels.        |
+| Cursor left    | `K_LEFT $9D` | Viewer page up.                       |
+| Cursor right   | `K_RIGHT $1D` | Viewer page down.                    |
 
 Text prompts (`prompt_text`): accept up to 16 PETSCII characters into `prompt_buf`, DEL backspaces, RETURN commits, RUN/STOP cancels.
 
 Yes/no prompt (`prompt_yn`): RETURN or `Y` confirms; any other key cancels.
 
-Viewer keys (`view_loop`): `H` switches to hex, `T` to text, cursor up/down scroll, HOME jumps to top, `Q`/RUN/STOP closes the viewer. The viewer reads keys with `GETIN` from the keyboard (default input after `CLRCHN`).
+Viewer keys (`view_loop`): `H` switches to hex, `T` to text, cursor up/down scroll one row, cursor left/right scroll one page, HOME jumps to top, `E`/RUN/STOP closes the viewer. `Q` is ignored in the viewer (reserved for main program quit). The viewer reads keys with `GETIN` from the keyboard (default input after `CLRCHN`).
 
 ## DOS Command Construction
 

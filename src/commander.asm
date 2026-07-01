@@ -68,8 +68,8 @@ ENT_SIZE   = 20                 ; bytes per entry record
                                 ; layout: blo, bhi, type, name[16], pad
 
 ; ---- Viewer layout constants ---------------------------
-VIEW_ROWS      = 22             ; visible content rows (rows 1..22)
-VIEW_TEXT_COLS = 40             ; columns per text-mode row
+VIEW_ROWS      = 21             ; visible content rows (rows 2..22 inside frame)
+VIEW_TEXT_COLS = 38             ; columns per text-mode row (cols 1..38 inside frame)
 VIEW_HEX_COLS  = 8              ; bytes per hex-mode row
 VIEW_CHUNK     = 2048           ; chunk buffer size for partial load
 VIEW_LFN       = 3              ; logical file number for the viewer
@@ -91,6 +91,10 @@ BOX_BR    = $7D           ; corner BR (h-left + v-up)
 BOX_BL    = $6D           ; corner BL (h-right + v-up)
 BOX_H     = $40           ; horizontal center line
 BOX_V     = $5D           ; vertical center line
+BOX_TJD   = $72           ; T-junction down (h-both + v-down)
+BOX_TJU   = $71           ; T-junction up (h-both + v-up)
+HB_LEFT   = $61           ; left half block (left 4px filled)
+HB_RLEFT  = $E1           ; reversed left half block (right 4px filled)
 
 ; ---- PETSCII keys -------------------------------------
 K_UP    = $91
@@ -116,6 +120,7 @@ CH_Y    = $59
 CH_V    = $56
 CH_H    = $48
 CH_T    = $54
+CH_E    = $45
 CH_0    = $30
 CH_COLON = $3A
 CH_EQ   = $3D
@@ -2321,8 +2326,8 @@ cb_loop:
 cb_tail:
 
         dex
-        lda BUFFER+$300-1,x     ; x = 231..0, reads $7FE7..$7F00
-        sta SCREEN+$300-1,x     ; writes $83E7..$8300
+        lda BUFFER+$300,x       ; x = 231..0, reads $7FE7..$7F00
+        sta SCREEN+$300,x       ; writes $83E7..$8300
         txa                     ; test X, not the loaded byte
         bne cb_tail             ; 232 bytes done, total = 1000
         rts
@@ -2482,21 +2487,30 @@ view_set_mode_params:
 
         lda view_mode
         beq vsm_text
+        ; Hex mode: row=8, screen=21*8=168, page=21*8=168 (no overlap)
         lda #VIEW_HEX_COLS
         sta view_row_size
         lda #<(VIEW_ROWS*VIEW_HEX_COLS)
         sta view_screen_size
         lda #>(VIEW_ROWS*VIEW_HEX_COLS)
         sta view_screen_size+1
+        lda #<(VIEW_ROWS*VIEW_HEX_COLS)
+        sta view_page_size
+        lda #>(VIEW_ROWS*VIEW_HEX_COLS)
+        sta view_page_size+1
         rts
 vsm_text:
-
+        ; Text mode: row=38, screen=21*38=798, page=20*38=760 (1-line overlap)
         lda #VIEW_TEXT_COLS
         sta view_row_size
         lda #<(VIEW_ROWS*VIEW_TEXT_COLS)
         sta view_screen_size
         lda #>(VIEW_ROWS*VIEW_TEXT_COLS)
         sta view_screen_size+1
+        lda #<((VIEW_ROWS-1)*VIEW_TEXT_COLS)
+        sta view_page_size
+        lda #>((VIEW_ROWS-1)*VIEW_TEXT_COLS)
+        sta view_page_size+1
         rts
 
 ; =========================================================
@@ -2605,128 +2619,232 @@ vlc_err:
         rts
 
 ; =========================================================
-; view_render: clear screen, draw title, content, help bar
+; view_render: clear screen, draw header, frame, content, footer
 ; =========================================================
 
 view_render:
 
         jsr clear_screen
-        ; --- Title bar (row 0) ---
-        ldx #0
-        jsr row_addr_sp
-        ldy #0
-        ldx #0
-vr_title_pre:
-
-        lda view_title_str,x
-        beq vr_title_fn
-        jsr petscii_to_screen
-        sta (sp_lo),y
-        iny
-        inx
-        jmp vr_title_pre
-vr_title_fn:
-
-        ldx #0
-vr_title_fn_loop:
-
-        cpx view_fname_len
-        bcs vr_title_mode
-        lda view_fname,x
-        jsr petscii_to_screen
-        sta (sp_lo),y
-        iny
-        inx
-        jmp vr_title_fn_loop
-vr_title_mode:
-
-        lda #SC_SPACE
-        sta (sp_lo),y
-        iny
-        lda #$5B               ; PETSCII '['
-        jsr petscii_to_screen
-        sta (sp_lo),y
-        iny
-        lda view_mode
-        bne vr_title_hex
-        ldx #0
-vr_title_text_loop:
-
-        lda view_mode_text_str,x
-        beq vr_title_close
-        jsr petscii_to_screen
-        sta (sp_lo),y
-        iny
-        inx
-        jmp vr_title_text_loop
-vr_title_hex:
-
-        ldx #0
-vr_title_hex_loop:
-
-        lda view_mode_hex_str,x
-        beq vr_title_close
-        jsr petscii_to_screen
-        sta (sp_lo),y
-        iny
-        inx
-        jmp vr_title_hex_loop
-vr_title_close:
-
-        lda #$5D               ; PETSCII ']'
-        jsr petscii_to_screen
-        sta (sp_lo),y
-        ; Reverse the title bar
-        ldy #0
-vr_title_rv:
-
-        lda (sp_lo),y
-        ora #$80
-        sta (sp_lo),y
-        iny
-        cpy #40
-        bne vr_title_rv
-        ; --- Content rows ---
+        ; --- Header bar (row 0) ---
+        jsr view_draw_header
+        ; --- Content frame (rows 1, 2-22, 23) ---
+        jsr view_draw_frame
+        ; --- Content rows (rows 2-22) ---
         lda view_mode
         bne vr_hex_mode
         jsr view_render_text
-        jmp vr_help
+        jmp vr_footer
 vr_hex_mode:
 
         jsr view_render_hex
-vr_help:
-
-        ; --- Help bar (row 24) ---
+vr_footer:
+        ; --- Footer bar (row 24) ---
         ldx #24
         jsr row_addr_sp
         ldy #0
-        ldx #0
-vr_help_loop:
+vr_footer_loop:
 
-        lda view_help_str,x
-        beq vr_help_fill
-        jsr petscii_to_screen
+        lda view_footer_str,y
         sta (sp_lo),y
         iny
-        inx
-        jmp vr_help_loop
-vr_help_fill:
-
-        lda #SC_SPACE
-vr_help_fill_loop:
-
         cpy #40
-        bcs vr_done
-        sta (sp_lo),y
-        iny
-        jmp vr_help_fill_loop
+        bne vr_footer_loop
 vr_done:
 
         jsr present_screen
         rts
 
 ; =========================================================
-; view_render_text: render VIEW_ROWS rows of text (rows 1..22)
+; view_draw_header: draw reverse-video header on row 0
+; Layout: $E1 | reversed content (38 cols) | $61
+; Content: "  VIEW  filename<pad>  MODE  "
+; =========================================================
+
+view_draw_header:
+
+        ldx #0
+        jsr row_addr_sp
+        ; Left border
+        ldy #0
+        lda #HB_RLEFT
+        sta (sp_lo),y
+        ; Right border
+        ldy #39
+        lda #HB_LEFT
+        sta (sp_lo),y
+        ; Fill cols 1-38 with reversed space ($A0)
+        ldy #1
+        lda #$A0
+vdh_fill:
+
+        sta (sp_lo),y
+        iny
+        cpy #39
+        bne vdh_fill
+        ; Write "VIEW" at cols 3-6 (reversed screen codes)
+        ldy #3
+        lda #$96               ; 'V' reversed
+        sta (sp_lo),y
+        iny
+        lda #$89               ; 'I' reversed
+        sta (sp_lo),y
+        iny
+        lda #$85               ; 'E' reversed
+        sta (sp_lo),y
+        iny
+        lda #$97               ; 'W' reversed
+        sta (sp_lo),y
+        ; Write filename at cols 9.. (reversed)
+        ldy #9
+        ldx #0
+vdh_fn:
+
+        cpx view_fname_len
+        bcs vdh_mode
+        lda view_fname,x
+        jsr petscii_to_screen
+        ora #$80               ; reverse
+        sta (sp_lo),y
+        iny
+        inx
+        jmp vdh_fn
+vdh_mode:
+        ; Write mode right-aligned ending at col 35
+        ; TEXT = 4 chars -> cols 32-35; HEX = 3 chars -> cols 33-35
+        lda view_mode
+        bne vdh_hex
+        ; Text mode: "TEXT" reversed at cols 32-35
+        ldy #32
+        lda #$94               ; 'T' reversed
+        sta (sp_lo),y
+        iny
+        lda #$85               ; 'E' reversed
+        sta (sp_lo),y
+        iny
+        lda #$98               ; 'X' reversed
+        sta (sp_lo),y
+        iny
+        lda #$94               ; 'T' reversed
+        sta (sp_lo),y
+        rts
+vdh_hex:
+        ; Hex mode: "HEX" reversed at cols 33-35
+        ldy #33
+        lda #$88               ; 'H' reversed
+        sta (sp_lo),y
+        iny
+        lda #$85               ; 'E' reversed
+        sta (sp_lo),y
+        iny
+        lda #$98               ; 'X' reversed
+        sta (sp_lo),y
+        rts
+
+; =========================================================
+; view_draw_frame: draw content frame borders
+; Hex mode: T-junctions at cols 5, 17, 29, 34
+; Text mode: plain borders (no internal dividers)
+; =========================================================
+
+view_draw_frame:
+
+        ; --- Top border (row 1) ---
+        ldx #1
+        jsr row_addr_sp
+        ldy #0
+        lda #BOX_TL
+        sta (sp_lo),y
+        ldy #39
+        lda #BOX_TR
+        sta (sp_lo),y
+        ; Fill horizontal line cols 1-38
+        ldy #1
+        lda #BOX_H
+vdf_top_fill:
+
+        sta (sp_lo),y
+        iny
+        cpy #39
+        bne vdf_top_fill
+        ; Hex mode: place T-junctions on top border
+        lda view_mode
+        beq vdf_top_done
+        ldy #5
+        lda #BOX_TJD
+        sta (sp_lo),y
+        ldy #17
+        sta (sp_lo),y
+        ldy #29
+        sta (sp_lo),y
+        ldy #34
+        lda #BOX_TJU
+        sta (sp_lo),y
+vdf_top_done:
+        ; --- Bottom border (row 23) ---
+        ldx #23
+        jsr row_addr_sp
+        ldy #0
+        lda #BOX_BL
+        sta (sp_lo),y
+        ldy #39
+        lda #BOX_BR
+        sta (sp_lo),y
+        ldy #1
+        lda #BOX_H
+vdf_bot_fill:
+
+        sta (sp_lo),y
+        iny
+        cpy #39
+        bne vdf_bot_fill
+        lda view_mode
+        beq vdf_bot_done
+        ldy #5
+        lda #BOX_TJU
+        sta (sp_lo),y
+        ldy #17
+        sta (sp_lo),y
+        ldy #29
+        sta (sp_lo),y
+        ldy #34
+        sta (sp_lo),y
+vdf_bot_done:
+        ; --- Side borders and dividers (rows 2-22) ---
+        ldx #2
+vdf_sides:
+
+        stx vdf_row
+        jsr row_addr_sp
+        ldy #0
+        lda #BOX_V
+        sta (sp_lo),y
+        ldy #39
+        sta (sp_lo),y
+        ; Hex mode: internal dividers at cols 5, 17, 29, 34
+        lda view_mode
+        beq vdf_sides_next
+        ldy #5
+        lda #BOX_V
+        sta (sp_lo),y
+        ldy #17
+        sta (sp_lo),y
+        ldy #29
+        sta (sp_lo),y
+        ldy #34
+        sta (sp_lo),y
+vdf_sides_next:
+
+        ldx vdf_row
+        inx
+        cpx #23
+        bne vdf_sides
+        rts
+
+vdf_row:         byte 0
+
+; =========================================================
+; view_render_text: render VIEW_ROWS rows of text (rows 2..22)
+; Content fills cols 1-38 (inside frame borders at 0 and 39)
 ; =========================================================
 
 view_render_text:
@@ -2750,18 +2868,23 @@ view_render_text:
         sta vr_bufcur
         lda vr_off+1
         sta vr_bufcur+1
-        ldx #1
+        ldx #2
 vrt_row:
 
         stx vr_rownum
         jsr row_addr_sp
         jsr view_calc_valid
         sta vr_valid
+        ; Write data at cols 1..38
+        ; Y indexes data in chunk buffer, vr_col tracks screen column
+        lda #1
+        sta vr_col
         ldy #0
-        cpy vr_valid
-        bcs vrt_pad
 vrt_data_loop:
 
+        cpy vr_valid
+        bcs vrt_pad
+        sty vr_ytmp           ; save data index
         lda (dp_lo),y
         cmp #$20
         bcc vrt_data_dot
@@ -2774,16 +2897,20 @@ vrt_data_dot:
         lda #SC_DOT
 vrt_data_store:
 
+        ldy vr_col
         sta (sp_lo),y
+        inc vr_col
+        ldy vr_ytmp           ; restore data index
         iny
-        cpy vr_valid
+        cpy #VIEW_TEXT_COLS
         bcc vrt_data_loop
 vrt_pad:
 
         lda #SC_SPACE
+        ldy vr_col
 vrt_pad_loop:
 
-        cpy #VIEW_TEXT_COLS
+        cpy #39
         bcs vrt_row_done
         sta (sp_lo),y
         iny
@@ -2806,13 +2933,18 @@ vrt_row_done:
         sta vr_bufcur+1
         ldx vr_rownum
         inx
-        cpx #(1+VIEW_ROWS)
+        cpx #(2+VIEW_ROWS)
         bne vrt_row
         rts
 
 ; =========================================================
-; view_render_hex: render VIEW_ROWS rows of hex (rows 1..22)
-; Row format: XXXX xx xx xx xx xx xx xx xx xxxxxxxx
+; view_render_hex: render VIEW_ROWS rows of hex (rows 2..22)
+; Row format: |ADDR|HH HH HH HH|HH HH HH HH|AAAA|AAAA|
+;   col 0: border, cols 1-4: address, col 5: divider,
+;   cols 6-16: hex group 1, col 17: divider,
+;   cols 18-28: hex group 2, col 29: divider,
+;   cols 30-33: ASCII group 1 (raw screen codes), col 34: divider,
+;   cols 35-38: ASCII group 2 (raw screen codes), col 39: border
 ; =========================================================
 
 view_render_hex:
@@ -2839,91 +2971,134 @@ view_render_hex:
         sta vr_fileoff
         lda view_top+1
         sta vr_fileoff+1
-        ldx #1
+        ldx #2
 vrh_row:
 
         stx vr_rownum
         jsr row_addr_sp
-        ; --- Offset (4 hex digits) ---
-        ldy #0
+        ; --- Address (4 hex digits at cols 1-4) ---
+        ldy #1
         lda vr_fileoff+1
         jsr write_hex_byte
         lda vr_fileoff
         jsr write_hex_byte
-        ; --- Space ---
-        lda #SC_SPACE
-        sta (sp_lo),y
-        iny
         ; --- Valid bytes in this row ---
         jsr view_calc_valid
         sta vr_valid
-        ; --- 8 hex bytes ---
+        ; --- Hex group 1 (cols 6-16): 4 bytes as HH HH HH HH ---
+        ldy #6
         ldx #0
-vrh_hex_loop:
+vrh_hex1_loop:
 
         cpx #0
-        beq vrh_hex_first
+        beq vrh_hex1_first
         lda #SC_SPACE
         sta (sp_lo),y
         iny
-vrh_hex_first:
+vrh_hex1_first:
 
         cpx vr_valid
-        bcs vrh_hex_pad
+        bcs vrh_hex1_pad
         sty vr_ytmp
         txa
         tay
         lda (dp_lo),y
         ldy vr_ytmp
         jsr write_hex_byte
-        jmp vrh_hex_next
-vrh_hex_pad:
+        jmp vrh_hex1_next
+vrh_hex1_pad:
 
         lda #SC_SPACE
         sta (sp_lo),y
         iny
         sta (sp_lo),y
         iny
-vrh_hex_next:
+vrh_hex1_next:
 
         inx
-        cpx #VIEW_HEX_COLS
-        bne vrh_hex_loop
-        ; --- Space between hex and ASCII ---
+        cpx #4
+        bne vrh_hex1_loop
+        ; --- Hex group 2 (cols 18-28): 4 bytes as HH HH HH HH ---
+        ldy #18
+        ldx #0
+vrh_hex2_loop:
+
+        cpx #0
+        beq vrh_hex2_first
         lda #SC_SPACE
         sta (sp_lo),y
         iny
-        ; --- 8 ASCII chars ---
-        ldx #0
-vrh_ascii_loop:
+vrh_hex2_first:
 
         cpx vr_valid
-        bcs vrh_ascii_pad
+        bcs vrh_hex2_pad
         sty vr_ytmp
         txa
         tay
         lda (dp_lo),y
         ldy vr_ytmp
-        cmp #$20
-        bcc vrh_ascii_dot
-        cmp #$7F
-        bcs vrh_ascii_dot
-        jsr petscii_to_screen
-        jmp vrh_ascii_put
-vrh_ascii_dot:
-
-        lda #SC_DOT
-        jmp vrh_ascii_put
-vrh_ascii_pad:
+        jsr write_hex_byte
+        jmp vrh_hex2_next
+vrh_hex2_pad:
 
         lda #SC_SPACE
-vrh_ascii_put:
-
         sta (sp_lo),y
         iny
+        sta (sp_lo),y
+        iny
+vrh_hex2_next:
+
         inx
-        cpx #VIEW_HEX_COLS
-        bne vrh_ascii_loop
+        cpx #4
+        bne vrh_hex2_loop
+        ; --- ASCII group 1 (cols 30-33): 4 raw bytes as screen codes ---
+        ldy #30
+        ldx #0
+vrh_ascii1_loop:
+
+        cpx vr_valid
+        bcs vrh_ascii1_pad
+        sty vr_ytmp
+        txa
+        tay
+        lda (dp_lo),y
+        ldy vr_ytmp
+        sta (sp_lo),y          ; raw screen code, no conversion
+        jmp vrh_ascii1_next
+vrh_ascii1_pad:
+
+        lda #SC_SPACE
+        sta (sp_lo),y
+vrh_ascii1_next:
+
+        iny
+        inx
+        cpx #4
+        bne vrh_ascii1_loop
+        ; --- ASCII group 2 (cols 35-38): 4 raw bytes as screen codes ---
+        ldy #35
+        ldx #0
+vrh_ascii2_loop:
+
+        cpx vr_valid
+        bcs vrh_ascii2_pad
+        sty vr_ytmp
+        txa
+        tay
+        lda (dp_lo),y
+        ldy vr_ytmp
+        sta (sp_lo),y          ; raw screen code, no conversion
+        jmp vrh_ascii2_next
+vrh_ascii2_pad:
+
+        lda #SC_SPACE
+        sta (sp_lo),y
+vrh_ascii2_next:
+
+        iny
+        inx
+        cpx #4
+        bne vrh_ascii2_loop
         ; --- Advance for next row ---
         lda dp_lo
         clc
@@ -2948,7 +3123,7 @@ vrh_ascii_put:
         sta vr_fileoff+1
         ldx vr_rownum
         inx
-        cpx #(1+VIEW_ROWS)
+        cpx #(2+VIEW_ROWS)
         beq vrh_done
         jmp vrh_row
 vrh_done:
@@ -2974,9 +3149,13 @@ vl_wait:
         beq vl_up
         cmp #K_DOWN
         beq vl_down
+        cmp #K_LEFT
+        beq vl_pgup
+        cmp #K_RIGHT
+        beq vl_pgdn
         cmp #K_HOME
         beq vl_home
-        cmp #CH_Q
+        cmp #CH_E
         beq vl_quit
         cmp #K_STOP
         beq vl_quit
@@ -3000,6 +3179,14 @@ vl_up:
 vl_down:
 
         jsr view_scroll_down
+        jmp view_loop
+vl_pgup:
+
+        jsr view_page_up
+        jmp view_loop
+vl_pgdn:
+
+        jsr view_page_down
         jmp view_loop
 vl_home:
 
@@ -3117,6 +3304,105 @@ view_home:
         rts
 
 ; =========================================================
+; view_page_down: advance view_top by view_page_size, reload if needed
+; =========================================================
+
+view_page_down:
+
+        clc
+        lda view_top
+        adc view_page_size
+        sta view_top
+        lda view_top+1
+        adc view_page_size+1
+        sta view_top+1
+        ; Check if view_top + screen_size > chunk_base + chunk_len
+        clc
+        lda view_top
+        adc view_screen_size
+        sta vpd_end_lo
+        lda view_top+1
+        adc view_screen_size+1
+        sta vpd_end_hi
+        clc
+        lda view_chunk_base
+        adc view_chunk_len
+        sta vpd_chunkend_lo
+        lda view_chunk_base+1
+        adc view_chunk_len+1
+        sta vpd_chunkend_hi
+        lda vpd_end_hi
+        cmp vpd_chunkend_hi
+        bcc vpd_done
+        bne vpd_need_reload
+        lda vpd_end_lo
+        cmp vpd_chunkend_lo
+        bcc vpd_done
+        lda view_at_eof
+        bne vpd_clamp
+vpd_need_reload:
+
+        lda view_top
+        sta view_chunk_base
+        lda view_top+1
+        sta view_chunk_base+1
+        jsr view_load_chunk
+        rts
+vpd_clamp:
+
+        sec
+        lda view_top
+        sbc view_page_size
+        sta view_top
+        lda view_top+1
+        sbc #0
+        sta view_top+1
+vpd_done:
+
+        rts
+
+; =========================================================
+; view_page_up: retreat view_top by view_page_size, reload if needed
+; =========================================================
+
+view_page_up:
+
+        lda view_top
+        ora view_top+1
+        beq vpu_done
+        sec
+        lda view_top
+        sbc view_page_size
+        sta view_top
+        lda view_top+1
+        sbc view_page_size+1
+        sta view_top+1
+        bcs vpu_check
+        ; Underflow: clamp to 0
+        lda #0
+        sta view_top
+        sta view_top+1
+vpu_check:
+        lda view_top+1
+        cmp view_chunk_base+1
+        bcc vpu_reload
+        bne vpu_done
+        lda view_top
+        cmp view_chunk_base
+        bcc vpu_reload
+        rts
+vpu_reload:
+
+        lda view_top
+        sta view_chunk_base
+        lda view_top+1
+        sta view_chunk_base+1
+        jsr view_load_chunk
+vpu_done:
+
+        rts
+
+; =========================================================
 ; Viewer state and buffers
 ; =========================================================
 
@@ -3125,8 +3411,9 @@ view_top:        word 0          ; byte offset of visible top
 view_chunk_base: word 0          ; byte offset of chunk start
 view_chunk_len:  word 0          ; bytes loaded in chunk
 view_at_eof:     byte 0          ; nonzero if last read hit EOF
-view_row_size:   byte 0          ; bytes per row (40 or 8)
-view_screen_size: word 0         ; bytes per screen (880 or 176)
+view_row_size:   byte 0          ; bytes per row (38 or 8)
+view_screen_size: word 0         ; bytes per screen (798 or 168)
+view_page_size:  word 0          ; bytes per page (760 text, 168 hex)
 view_fname:      ds 16, 0        ; filename being viewed
 view_fname_len:  byte 0
 view_chunk:      ds VIEW_CHUNK, 0 ; chunk buffer
@@ -3138,21 +3425,41 @@ vr_valid:        byte 0
 vr_rownum:       byte 0
 vr_fileoff:      word 0
 vr_ytmp:         byte 0
+vr_col:          byte 0
 vlc_skl:         byte 0
 vlc_skh:         byte 0
 vsd_end_lo:      byte 0
 vsd_end_hi:      byte 0
 vsd_chunkend_lo: byte 0
 vsd_chunkend_hi: byte 0
+vpd_end_lo:      byte 0
+vpd_end_hi:      byte 0
+vpd_chunkend_lo: byte 0
+vpd_chunkend_hi: byte 0
 vcv_tmp:         byte 0
 whb_tmp:         byte 0
 bth_tmp:         byte 0
 
 ; Viewer strings
-view_title_str:    byte "VIEW: ",0
-view_mode_text_str: byte "TEXT",0
-view_mode_hex_str:  byte "HEX",0
-view_help_str:     byte "T:TEXT H:HEX UP/DN:SCR HOME:TOP Q:QUIT",0
+; Footer bar (row 24): 40 screen codes, mixed reverse/normal video
+; $E1=HB_RLEFT border, $61=HB_LEFT border
+; T(normal) EXT(rev) SP(rev) H(normal) EX(rev) pad(rev) E(normal) XIT(rev)
+view_footer_str:
+        byte $E1                       ; col 0: left border (reversed half-block)
+        byte $14                       ; col 1: 'T' normal video
+        byte $85,$98,$94               ; cols 2-4: 'EXT' reversed
+        byte $A0                       ; col 5: reversed space
+        byte $08                       ; col 6: 'H' normal video
+        byte $85,$98                   ; cols 7-8: 'EX' reversed
+        byte $A0                       ; col 9: reversed space
+        byte $A0,$A0,$A0,$A0,$A0       ; cols 10-14: reversed space pad
+        byte $A0,$A0,$A0,$A0,$A0       ; cols 15-19: reversed space pad
+        byte $A0,$A0,$A0,$A0,$A0       ; cols 20-24: reversed space pad
+        byte $A0,$A0,$A0,$A0,$A0       ; cols 25-29: reversed space pad
+        byte $A0,$A0,$A0,$A0,$A0       ; cols 30-34: reversed space pad
+        byte $05                       ; col 35: 'E' normal video
+        byte $98,$89,$94               ; cols 36-38: 'XIT' reversed
+        byte $61                       ; col 39: right border (left half-block)
 msg_view_err:      byte "VIEW OPEN FAILED",0
 
 ; =========================================================

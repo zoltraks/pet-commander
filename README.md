@@ -68,8 +68,9 @@ The viewer is a modal overlay that covers the panels. It opens in text mode show
 | T              | Text display (default)                  |
 | H              | Hexadecimal display                     |
 | Cursor up/down | Scroll one row                          |
+| Cursor left/right | Page up / page down                  |
 | HOME           | Jump to the start of the file           |
-| Q or RUN/STOP  | Close the viewer and restore the panels |
+| E or RUN/STOP  | Close the viewer and restore the panels |
 
 The viewer loads file data in fixed-size chunks from disk. Scrolling within a chunk needs no disk I/O; scrolling past the chunk boundary reloads from disk. The current byte offset is preserved when switching between text and hex. On close, the panels reappear unchanged.
 

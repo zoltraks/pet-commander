@@ -28,7 +28,7 @@ The DASM run must finish with `Complete. (0)` and no errors.
 **Header and size check**
 
 Confirm the first two bytes of `build/commander.prg` are `01 04` (load address `$0401`).
-Confirm the build size is in the expected range (about 8.8 KB for the current feature set, which includes the viewer, its 2 KB chunk buffer, and the Present/Blit module). A large unexpected change in size is a signal to investigate.
+Confirm the build size is in the expected range (about 9.2 KB for the current feature set, which includes the viewer with bordered frame layout, its 2 KB chunk buffer, and the Present/Blit module). A large unexpected change in size is a signal to investigate.
 
 **Smoke run**
 
@@ -75,7 +75,7 @@ Automated line coverage is not applicable to this target. The qualitative target
 
 - Every keyboard binding in `SPECIFICATION.md` is exercised at least once during manual behaviour checks for a release.
 - Every DOS operation (delete, rename, copy) is exercised against the fixture and shows a status line.
-- Every viewer key (`V`, `H`, `T`, cursor up/down, HOME, `Q`, RUN/STOP) is exercised at least once against a PRG and a SEQ file on the fixture.
+- Every viewer key (`V`, `H`, `T`, cursor up/down, cursor left/right, HOME, `E`, RUN/STOP) is exercised at least once against a PRG and a SEQ file on the fixture.
 - The viewer open-failure path (`VIEW OPEN FAILED`) is reproduced at least once.
 - The viewer restores the panels on close; after closing, the panel state (selection, scroll, active panel) is unchanged.
 - The error paths (`DRIVE NOT READY`, `STATUS READ FAILED`, `FILE EXISTS`, `VIEW OPEN FAILED`) are reproduced at least once when their code is touched.
