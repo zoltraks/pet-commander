@@ -116,7 +116,7 @@ This applies to every code modification regardless of size.
 
 - Treat files and directories listed in `IGNORE.md` as excluded from analysis unless explicitly instructed.
 - Do not read from `change/`, `plan/`, `refactoring/`, `report/`, `archive/`, or `reference/` automatically. Read them only when the relevant work requires it or the user requests it.
-- `docs/skill/` is the natural location for skills used in this project. It is not restricted from reading. Consult the relevant sections before writing or modifying code. Never edit the submodule by hand.
+- `docs/skill/` is the natural location for skills used in this project. It is not restricted from reading. Consult the relevant sections before writing or modifying code. The `commodore-pet-skill` submodule may be edited directly in this repository; the user commits inside the submodule and synchronizes the pointer.
 - `build/` and `example/work.d64` are generated artifacts. They are not authoritative ground truth.
 
 ## Memorization Convention
