@@ -1,6 +1,7 @@
 #!/bin/sh
-# Rebuild example/work.d64 with the commander program and a few
-# sample files of mixed types.
+# Rebuild the example fixture disks for screen-RAM verification.
+# work.d64  (drive 8) : "PRIMARY DISK" with a few sample files.
+# another.d64 (drive 10) : "ANOTHER DISK" with a long-filename test file.
 # Requires c1541 (ships with VICE).
 
 set -e
@@ -14,21 +15,13 @@ TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 
 # Tiny PRG: 10 PRINT "HELLO PET"
-# Load address $0401, next-line $040F, line 10, PRINT token $99,
-# "HELLO PET", end-of-line $00, end-of-program $00 $00
 printf '\x01\x04\x0f\x04\x0a\x00\x99 "HELLO PET"\x00\x00\x00' > "$TMP/hello.prg"
 
-printf 'PET COMMANDER TEST DISK\nUSE ARROW KEYS\n' > "$TMP/intro.txt"
-printf 'A few notes for testing.\n'               > "$TMP/notes.txt"
+printf 'PRIMARY DISK\nUSE ARROW KEYS\n' > "$TMP/intro.txt"
+printf 'A few notes for testing.\n'   > "$TMP/notes.txt"
+printf 'PET Commander\n\nThis disk image is a test fixture for the viewer.\n' > "$TMP/rdoc.txt"
 
-# README.TXT: ASCII prose with mixed case for viewer ASCII/SCREEN
-# and UPPER/LOWER charset testing.
-# Note: c1541 (VICE 3.7) hangs if any argument to -write contains the
-# substring "readme" (host filename or CBM-DOS name). We write the file
-# with a safe name then rename it on the disk to README.
-printf 'PET Commander\n\nThis disk image is a test fixture for the viewer.\nIt contains a PRG, a few SEQ files, and this README.\nUse the V key to open the viewer, then press A for ASCII\nor S for raw screen codes, and L or U to switch the\ncharacter set between lowercase and uppercase.\n' > "$TMP/rdoc.txt"
-
-c1541 -format "pet commander,01" d64 work.d64 \
+c1541 -format "primary disk,01" d64 work.d64 \
       -write ../build/commander.prg "commander,p" \
       -write "$TMP/hello.prg"       "hello,p" \
       -write "$TMP/intro.txt"       "intro,s" \
@@ -37,10 +30,16 @@ c1541 -format "pet commander,01" d64 work.d64 \
       -write "$TMP/intro.txt"       "longname-test,s" \
       -write "$TMP/rdoc.txt"        "zreadme,s"
 
-# Rename zreadme to README on the disk (c1541 rename is not affected
-# by the "readme" substring bug).
 printf 'attach work.d64\nrename zreadme README\nquit\n' | c1541
+
+# Long-filename test file for drive 10 (CBM DOS max 16 chars)
+python3 -c "open('$TMP/longfile.txt','wb').write(b'A' * 12528)"
+c1541 -format "another disk,01" d64 another.d64 \
+      -write "$TMP/longfile.txt"    "long-filename.te,s"
 
 echo
 echo "Built work.d64:"
 c1541 work.d64 -list
+echo
+echo "Built another.d64:"
+c1541 another.d64 -list

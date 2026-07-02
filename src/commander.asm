@@ -819,8 +819,10 @@ draw_dropdown:
         lda menu_item_count,x
         sta dd_count
 
-        ; Compute left edge = title_col - 2, right edge = left + 11
-        ; Clamp right edge to 38 so the box stays on screen.
+        ; Compute left edge = title_col - 2, right edge = left + 11 (12-column box).
+        ; If the box would exceed the right edge, clamp right to 38 and use a
+        ; narrower 11-column box (left = 28) so the right edge stays aligned with
+        ; the right edge of the active menu title area.
 
         lda dd_col
         sec
@@ -831,10 +833,16 @@ draw_dropdown:
         cmp #39
         bcc dd_store_right
         lda #38
+        sta dd_right
+        lda #28
+        sta dd_left
+        jmp dd_right_done
 
 dd_store_right:
 
         sta dd_right
+
+dd_right_done:
 
         ; Draw top edge connectors at row 1 and clear the interior
 
@@ -848,11 +856,12 @@ dd_store_right:
         sta (sp_lo),y
         jsr draw_dropdown_clear_interior
 
-        ; Total rows = count + 3; row index starts at 2 (first item)
+        ; Total rows = count + 4; row index starts at 2 (first item).
+        ; The extra row is the bottom border (row count + 3).
 
         lda dd_count
         clc
-        adc #3
+        adc #4
         sta dd_rows
         ldx #2
 
@@ -955,8 +964,14 @@ ddci_loop:
 
 ; draw_dropdown_row: draw one item row (dd_item_idx) with side borders,
 ; left-aligned label, right-aligned shortcut, and selected highlight.
-
-DRAW_INNER = 10
+; The interior width is dd_right - dd_left - 1 (normally 10, 9 when the
+; box is clamped to the right edge). Layout inside the box:
+;   offset 0              : left edge (space, or $E1 when selected)
+;   offsets 1..width-4    : label (padded with spaces)
+;   offset width-3        : padding space
+;   offset width-2        : shortcut
+;   offset width-1        : right edge (space, or $61 when selected)
+; The right border at dd_right is drawn separately and is never overwritten.
 
 draw_dropdown_row:
 
@@ -975,40 +990,68 @@ draw_dropdown_row:
         lda #$ff
         sta dd_sel_flag
 
-        ; Set screen pointer for this row
+        ; Compute interior width and special offsets from the actual border cols
 
 ddr_set_row:
+
+        lda dd_right
+        sec
+        sbc dd_left
+        sbc #1
+        sta dd_width            ; interior width (e.g., 10 or 9)
+        tax
+        dex                     ; width-1 = right edge offset
+        stx dd_right_edge
+        dex                     ; width-2 = shortcut offset
+        stx dd_shortcut_off
+        dex                     ; width-3 = padding space offset
+        stx dd_space_off
+
+        ; Set screen pointer for this row
 
         ldx dd_row
         jsr row_addr_sp
 
         ; Clear interior and draw side borders.
-        ; For the selected item, use T-junctions (BOX_TLEFT/BOX_TRIGHT)
-        ; because the highlight bar connects horizontally to the border.
+        ; For the selected item, use T-junctions (BOX_TLEFT/BOX_TRIGHT) when the
+        ; dropdown is wide (>= 12 total columns), otherwise keep vertical borders
+        ; (BOX_V) so the highlight bar sits inside the narrower frame.
 
         jsr draw_dropdown_clear_interior
+
+        ; Wide dropdowns (>=12 total cols) use T-junctions for the selected
+        ; item; narrow dropdowns keep vertical borders so the highlight bar
+        ; sits inside the frame.
+
         ldy dd_left
+        lda dd_width
+        cmp #10
+        bcc ddr_left_v        ; narrow: plain vertical border
         lda #BOX_V
         ldx dd_sel_flag
         beq ddr_left_border
         lda #BOX_TLEFT
-
+        bne ddr_left_border
+ddr_left_v:
+        lda #BOX_V
 ddr_left_border:
-
         sta (sp_lo),y
+
         ldy dd_right
+        lda dd_width
+        cmp #10
+        bcc ddr_right_v       ; narrow: plain vertical border
         lda #BOX_V
         ldx dd_sel_flag
         beq ddr_right_border
         lda #BOX_TRIGHT
-
+        bne ddr_right_border
+ddr_right_v:
+        lda #BOX_V
 ddr_right_border:
-
         sta (sp_lo),y
 
-        ; Draw interior offsets 0..9 (col = dd_left + 1 + offset)
-
-ddr_start:
+        ; Draw interior offsets 0..dd_width-1
 
         ldy #0
         sty ddr_off
@@ -1026,15 +1069,15 @@ ddr_loop:
         ; Determine what to draw at this interior offset
 
         ldx ddr_off
-        cpx #0
         beq ddr_offset0
-        cpx #9
-        beq ddr_offset9
-        cpx #8
-        beq ddr_offset8
-        cpx #7
-        beq ddr_offset7
-        ; offsets 1-6: label chars (padded with spaces, converted to screen code)
+        cpx dd_right_edge
+        beq ddr_right_edge_draw
+        cpx dd_shortcut_off
+        beq ddr_shortcut
+        cpx dd_space_off
+        beq ddr_space
+
+        ; offsets 1..space_off-1: label chars (padded with spaces)
         txa
         sec
         sbc #1
@@ -1049,12 +1092,12 @@ ddr_label_sp:
         lda #SC_SPACE
         jmp ddr_char
 
-ddr_offset7:
+ddr_space:
 
         lda #SC_SPACE
         jmp ddr_char
 
-ddr_offset8:
+ddr_shortcut:
 
         lda dd_shortcut
         jsr petscii_to_screen
@@ -1072,27 +1115,26 @@ ddr_sp0:
         lda #SC_SPACE
         jmp ddr_char
 
-ddr_offset9:
+ddr_right_edge_draw:
 
         lda dd_sel_flag
-        beq ddr_sp9
+        beq ddr_sp_re
         lda #HB_LEFT            ; $61 left half-block
         jmp ddr_char
 
-ddr_sp9:
+ddr_sp_re:
 
         lda #SC_SPACE
 
-        ; Reverse content offsets (1-8) when selected
+        ; Reverse content offsets (1..right_edge-1) when selected
 
 ddr_char:
 
         ldx dd_sel_flag
         beq ddr_store
         ldx ddr_off
-        cpx #0
         beq ddr_store
-        cpx #9
+        cpx dd_right_edge
         beq ddr_store
         ora #$80
 
@@ -1102,7 +1144,7 @@ ddr_store:
 
         inc ddr_off
         lda ddr_off
-        cmp #DRAW_INNER
+        cmp dd_width
         bne ddr_loop
         rts
 
@@ -1258,12 +1300,16 @@ dd_col:         byte 0          ; title column for current menu
 dd_left:        byte 0          ; dropdown left border column
 dd_right:       byte 0          ; dropdown right border column
 dd_count:       byte 0          ; number of items in current menu
-dd_rows:        byte 0          ; total dropdown rows (count + 3)
+dd_rows:        byte 0          ; total dropdown rows (count + 4)
 dd_row:         byte 0          ; current row being drawn
 dd_item_idx:    byte 0          ; current item index
 dd_shortcut:    byte 0          ; shortcut PETSCII for current item
 dd_sel_flag:    byte 0          ; $ff if current item is selected, else 0
 ddr_off:        byte 0          ; interior column offset for drawing
+dd_width:       byte 0          ; interior width (dd_right - dd_left - 1)
+dd_right_edge:  byte 0          ; interior offset of right highlight edge
+dd_shortcut_off: byte 0         ; interior offset of shortcut char
+dd_space_off:   byte 0          ; interior offset of padding space before shortcut
 dd_label_buf:   ds DROP_WIDTH, 0
 
 ; =========================================================
@@ -4468,16 +4514,21 @@ diw_mul254:
 
 op_about:
 
+        ; Clear menu selection so the menu bar is redrawn with no active title
+        ; while the ABOUT modal is displayed.
+        lda #0
+        sta menu_active
+        jsr draw_menu_bar
         jsr draw_about_window
         jsr wait_any_key
         jsr full_redraw
         rts
 
 ; draw_about_window: bordered window with program info
-; Window: rows 5-19, cols 5-34, with inner vertical bars at cols 8 and 31.
+; Window: rows 5-20, cols 5-34, with inner vertical bars at cols 8 and 31.
 
 ABOUT_TOP       = 5
-ABOUT_BOT       = 19
+ABOUT_BOT       = 20
 ABOUT_LEFT      = 5
 ABOUT_RIGHT     = 34
 ABOUT_INNER_L   = 8
@@ -4505,7 +4556,7 @@ daw_top:
         lda #BOX_TR
         sta (sp_lo),y
 
-        ; Draw side borders and clear interior for rows 6..18
+        ; Draw side borders and clear interior for rows 6..19
 
         ldx #ABOUT_TOP+1
 
@@ -4557,29 +4608,41 @@ daw_bot:
         lda #BOX_BR
         sta (sp_lo),y
 
-        ; Draw inner vertical bars at cols 8 and 31 (rows 6..18)
+        ; Draw inner vertical bars at cols 8 and 31 on rows 6..19.
+        ; Use $60 (decorative half-block).  Skip bars on rows that the
+        ; layout example leaves clear (row 12 both, row 11/14 left only).
 
         ldx #ABOUT_TOP+1
 
 daw_bars:
 
         stx daw_row
+        cpx #12
+        beq daw_next_row        ; row 12: no inner bars
         jsr row_addr_sp
-        ldy #ABOUT_INNER_L
-        lda #HB_LEFT
-        sta (sp_lo),y
         ldy #ABOUT_INNER_R
+        lda #$60
         sta (sp_lo),y
+        ldx daw_row
+        cpx #11
+        beq daw_next_row        ; row 11: keep only right bar
+        cpx #14
+        beq daw_next_row        ; row 14: keep only right bar
+        ldy #ABOUT_INNER_L
+        sta (sp_lo),y
+
+daw_next_row:
+
         ldx daw_row
         inx
         cpx #ABOUT_BOT
         bne daw_bars
 
-        ; Content row 8 (absolute): "PET COMMANDER" centered at cols 14-25
+        ; Row 7 (absolute): "PET COMMANDER" at cols 13-25
 
-        ldx #8
+        ldx #7
         jsr row_addr_sp
-        ldy #14
+        ldy #13
         lda #$10                ; 'P'
         sta (sp_lo),y
         iny
@@ -4619,12 +4682,12 @@ daw_bars:
         lda #$12                ; 'R'
         sta (sp_lo),y
 
-        ; Row 9 (absolute): decorative underline at cols 12-17
+        ; Row 8 (absolute): 6-character decorative underline at cols 12-17
 
-        ldx #9
+        ldx #8
         jsr row_addr_sp
         ldy #12
-        lda #HB_LEFT
+        lda #$60
         sta (sp_lo),y
         iny
         sta (sp_lo),y
@@ -4637,9 +4700,9 @@ daw_bars:
         iny
         sta (sp_lo),y
 
-        ; Row 11 (absolute): "VERSION: 0.3" at cols 14-25
+        ; Row 10 (absolute): "VERSION: 0.3" at cols 14-25
 
-        ldx #11
+        ldx #10
         jsr row_addr_sp
         ldy #14
         lda #$16                ; 'V'
@@ -4678,11 +4741,157 @@ daw_bars:
         lda #$33                ; '3'
         sta (sp_lo),y
 
-        ; Row 18 (absolute): "OK" button at cols 24-27
+        ; Row 13 (absolute): "BROUGHT TO YOU BY ZOLTAR X" at cols 7-32
+        ; This spans the full width, so it overwrites the inner bars.
+
+        ldx #13
+        jsr row_addr_sp
+        ldy #7
+        lda #$02                ; 'B'
+        sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$15                ; 'U'
+        sta (sp_lo),y
+        iny
+        lda #$07                ; 'G'
+        sta (sp_lo),y
+        iny
+        lda #$08                ; 'H'
+        sta (sp_lo),y
+        iny
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$20                ; ' '
+        sta (sp_lo),y
+        iny
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$20                ; ' '
+        sta (sp_lo),y
+        iny
+        lda #$19                ; 'Y'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$15                ; 'U'
+        sta (sp_lo),y
+        iny
+        lda #$20                ; ' '
+        sta (sp_lo),y
+        iny
+        lda #$02                ; 'B'
+        sta (sp_lo),y
+        iny
+        lda #$19                ; 'Y'
+        sta (sp_lo),y
+        iny
+        lda #$20                ; ' '
+        sta (sp_lo),y
+        iny
+        lda #$1A                ; 'Z'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$0C                ; 'L'
+        sta (sp_lo),y
+        iny
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$01                ; 'A'
+        sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$20                ; ' '
+        sta (sp_lo),y
+        iny
+        lda #$18                ; 'X'
+        sta (sp_lo),y
+
+        ; Row 14 (absolute): short separator at cols 19-20
+
+        ldx #14
+        jsr row_addr_sp
+        ldy #19
+        lda #$60
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+
+        ; Row 15 (absolute): "NEW GENERATION" at cols 13-26
+
+        ldx #15
+        jsr row_addr_sp
+        ldy #13
+        lda #$0E                ; 'N'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$17                ; 'W'
+        sta (sp_lo),y
+        iny
+        lda #$20                ; ' '
+        sta (sp_lo),y
+        iny
+        lda #$07                ; 'G'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$0E                ; 'N'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$01                ; 'A'
+        sta (sp_lo),y
+        iny
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$09                ; 'I'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$0E                ; 'N'
+        sta (sp_lo),y
+
+        ; Row 18 (absolute): "OK" button at cols 17-21
+        ; Layout: $60 decorative half-block, $E1 reversed left half-block,
+        ; 'O' reversed, 'K' reversed, $61 left half-block.
 
         ldx #18
         jsr row_addr_sp
-        ldy #24
+        ldy #17
+        lda #$60
+        sta (sp_lo),y
+        iny
         lda #HB_RLEFT           ; $E1 reversed left half-block
         sta (sp_lo),y
         iny

@@ -40,14 +40,14 @@ Each dropdown overlays the panel content below its menu title. The dropdown is a
 
 Layout rules:
 
-- The dropdown is always 12 columns wide.
+- The dropdown is normally 12 columns wide, but the rightmost menu (Help, dropping from col 33) is clamped to an 11-column box so its right edge stays aligned with the right edge of the active title area (cols 28-38).
 - Its left edge is `title_col - 2`, clamped so the right edge never exceeds column 38.
-- The total height is `item_count + 3` rows:
+- The total height is `item_count + 4` rows:
   - row 1: top T-junction connectors (clearing the interior to spaces),
   - rows 2..count+1: menu items,
-  - row count+2: empty interior row,
+  - row count+2: empty interior row with vertical borders,
   - row count+3: bottom border.
-- Each item line shows the label left-justified (starting at the first interior column) and the shortcut key right-justified (at the 8th interior column).
+- Each item line shows the label left-justified (starting at the first interior column) and the shortcut key right-justified near the right edge.
 - The selected item is highlighted with a reversed-video bar. The bar is framed by a reversed left half-block (`$E1`) on the left and a normal left half-block (`$61`) on the right; at the dropdown borders the vertical line becomes a T-junction (`$73` / `$6B`) for that row.
 
 #### File Menu
@@ -98,13 +98,16 @@ A modal window showing detailed information about the selected file:
 
 A modal window showing program information:
 
-- Bordered window, 30 columns x 15 rows, centered at cols 5-34 and rows 5-19.
-- Two inner vertical half-block bars (`$60`) at cols 8 and 31 create a framed content area.
+- Bordered window, 30 columns x 16 rows, centered at cols 5-34 and rows 5-20.
+- Two inner vertical half-block bars (`$60`) at cols 8 and 31 create a framed content area. The bars are drawn selectively: rows 6-10, 15-19 have both bars; row 11 has only the right bar; row 12 has neither bar; row 14 has only the right bar and a short 2-character separator.
 - Content:
-  - `PET COMMANDER` centered near the top.
-  - A 6-character half-block underline below the program name.
-  - `VERSION: 0.3` centered below the underline.
-  - An `OK` button in a reversed half-block box at the bottom.
+  - `PET COMMANDER` at row 7, cols 13-25.
+  - A 6-character half-block underline at row 8, cols 13-18.
+  - `VERSION: 0.3` at row 10, cols 15-26.
+  - `BROUGHT TO YOU BY ZOLTAR X` spanning the full width at row 13, cols 7-32.
+  - A 2-character half-block separator at row 14, cols 19-20.
+  - `NEW GENERATION` at row 15, cols 13-26.
+  - An `OK` button in a reversed half-block box at row 18, cols 22-26 (`$60 $E1 $8F $8B $61`).
 - Any key closes the window.
 
 #### Change Drive Window (CHANGE)
