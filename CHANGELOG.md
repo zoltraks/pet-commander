@@ -1,5 +1,17 @@
 # Changes
 
+## Version 0.3
+
+File viewer, double-buffered flicker-free rendering, and viewer refactoring.
+
+- **Added** **file viewer** (`V` key) with text and hex display modes, chunk-based partial loading from disk, and a modal overlay that restores the panels on close. Text mode shows file bytes as screen codes; hex mode shows address, hex byte pairs, and raw byte columns with a bordered frame, header bar, and footer bar.
+- **Added** **double-buffered rendering** with VBLANK-synchronized blit to eliminate screen flicker. All drawing composes into a back buffer at `$7C00`; a single atomic copy transfers the complete frame to screen RAM during VBLANK. Navigation, file operations, viewer scrolling, and prompt input are now flicker-free.
+- **Added** **viewer page scrolling** with cursor left/right and a bordered frame layout with header and footer bars. `E` or RUN/STOP closes the viewer; `Q` is reserved for quitting the main program.
+- **Added** **viewer character-set controls** (`U` for uppercase, `L` for lowercase) via the VIA PCR register with read-modify-write to preserve the CB2 IEEE-488 NDAC bits, and **render modes** (`S` for raw screen codes, `A` for ASCII translation). In ASCII mode, lowercase letters render as inverse-video uppercase in the uppercase set so they stay visible. The character set is restored to uppercase on viewer exit.
+- **Changed** **viewer character-set switching** to synchronize the PCR write with the content blit during the same VBLANK, eliminating the one-frame partial-update flash where old content appeared under the new character set.
+- **Refactored** **viewer chunk-reload tail** by extracting a shared `view_reload_at_top` routine, replacing four identical inline copies in the scroll handlers.
+- **Removed** **dead `byte_to_hex` routine** and its `bth_tmp` scratch byte; the hex renderer uses `write_hex_byte` instead.
+
 ## Version 0.2
 
 Box-drawing fix, refactoring, and quit-on-restart bug fix.

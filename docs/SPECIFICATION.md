@@ -180,6 +180,8 @@ The chunk buffer covers `VIEW_CHUNK` (2048) bytes starting at `view_chunk_base`.
 - `view_page_up` subtracts `view_page_size` from `view_top`, clamped at 0. Reload logic matches `view_scroll_up`.
 - `view_home` sets `view_top` and `view_chunk_base` to 0 and reloads.
 
+The four scroll handlers share a single `view_reload_at_top` helper that copies `view_top` into `view_chunk_base` and calls `view_load_chunk`. `view_home` is the zero-case variant and inlines its reload.
+
 Because CBM-DOS sequential files have no backward seek, scrolling up past the chunk re-opens the file and skips forward byte-by-byte. This is the documented trade-off for chunk-based loading.
 
 ### Viewer rendering
@@ -213,7 +215,7 @@ Because CBM-DOS sequential files have no backward seek, scrolling up past the ch
 
 ### Byte to hex
 
-`byte_to_hex` converts a byte in A to two hex-digit screen codes: A = high nibble, Y = low nibble. `nibble_to_sc` maps 0-9 to `$30`-`$39` and 10-15 to `$01`-`$06` (screen codes for `A`-`F`).
+`write_hex_byte` writes two hex-digit screen codes for a byte in A directly to `(sp_lo),Y` and advances Y by 2. It is the routine the hex renderer calls. `nibble_to_sc` maps 0-9 to `$30`-`$39` and 10-15 to `$01`-`$06` (screen codes for `A`-`F`); it is shared by `write_hex_byte`.
 
 ## Keyboard and Input Bindings
 

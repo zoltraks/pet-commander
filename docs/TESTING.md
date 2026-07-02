@@ -58,6 +58,10 @@ Address every error and warning. Repeat the loop until clean.
 
 This loop applies to every code modification regardless of size. Work is finished only when all steps pass.
 
+**Do not run the emulator after a failed build**
+
+If `./build.sh` reports assembly errors, fix the errors and rebuild before running `./run.sh` or any `xpet` command. Running the emulator with a stale PRG wastes time and produces misleading results.
+
 ## Test Types
 
 - **Build verification**: the assemble and header/size checks above. Automatable and fast.

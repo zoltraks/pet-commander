@@ -103,7 +103,7 @@ This applies to every code modification regardless of size.
 ### Editing Existing Files
 
 - Maintain existing style and naming conventions.
-- **Critical**: Preserve line endings. All project files use CRLF.
+- **Critical**: Preserve existing line endings. Do not convert between LF and CRLF.
 - **Critical**: Preserve UTF-8 / ASCII encoding.
 - **Critical**: Do not change version numbers unless explicitly instructed.
 
