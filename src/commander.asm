@@ -17,6 +17,7 @@
 ; Two-number scheme MAJOR.MINOR. MINOR runs 0-9; the next
 ; increment past 9 rolls MAJOR over and resets MINOR to 0
 ; (0.9 -> 1.0, 9.9 -> 10.0). See docs/VERSIONING.md.
+
 VERSION_MAJOR = 0
 VERSION_MINOR = 3
 
@@ -26,123 +27,136 @@ VERSION_MINOR = 3
 ; The PET's OPEN and CLOSE entries include BASIC parameter
 ; parsing, so we call the low-level logic directly instead.
 ; See pet_setnam, pet_setlfs, pet_open, pet_close below.
-OPEN    = $FFC0
-CLOSE   = $FFC3
-CHKIN   = $FFC6
-CHKOUT  = $FFC9
-CLRCHN  = $FFCC
-CHRIN   = $FFCF
-CHROUT  = $FFD2
-GETIN   = $FFE4
-CLALL   = $FFE7
+
+OPEN   = $FFC0
+CLOSE  = $FFC3
+CHKIN  = $FFC6
+CHKOUT = $FFC9
+CLRCHN = $FFCC
+CHRIN  = $FFCF
+CHROUT = $FFD2
+GETIN  = $FFE4
+CLALL  = $FFE7
 
 ; ---- PET KERNAL internal addresses --------------------
 ; These are the actual ROM entry points (past the BASIC
 ; parameter-parsing stubs) and the zero-page locations that
 ; the PET OPEN/CLOSE routines use internally.
-PET_OPEN_LOGIC  = $F524      ; OPEN after param parse
-PET_CLOSE_LOGIC = $F2AC      ; CLOSE after param parse
-PET_FNLEN       = $D1        ; filename length
-PET_LA          = $D2        ; logical file number
-PET_SA          = $D3        ; secondary address
-PET_DEV         = $D4        ; device number
-PET_FNADR_LO    = $DA        ; filename address low
-PET_FNADR_HI    = $DB        ; filename address high
+
+PET_OPEN_LOGIC  = $F524 ; OPEN after param parse
+PET_CLOSE_LOGIC = $F2AC ; CLOSE after param parse
+PET_FNLEN       = $D1   ; filename length
+PET_LA          = $D2   ; logical file number
+PET_SA          = $D3   ; secondary address
+PET_DEV         = $D4   ; device number
+PET_FNADR_LO    = $DA   ; filename address low
+PET_FNADR_HI    = $DB   ; filename address high
 
 ; ---- KERNAL zero-page mirrors -------------------------
-STATUS  = $0096
-BLNSW   = $00A7
+
+STATUS = $0096
+BLNSW  = $00A7
 
 ; ---- Hardware -----------------------------------------
-SCREEN  = $8000
-BUFFER  = $7C00          ; 1000-byte back buffer, page-aligned; target of all drawing
-VIA_PORTB   = $E840      ; VIA port B (PB5 = VBLANK signal)
-RETRACE_BIT = $20        ; PB5 mask: LOW during VBLANK, HIGH during active display
-PCR     = $E84C          ; VIA Peripheral Control Register; bits 3:1 select charset
-PCR_U   = $0C            ; PCR bits 3:1 = 110 -> uppercase/graphics set (default)
-PCR_L   = $0E            ; PCR bits 3:1 = 111 -> lowercase/text set
+
+SCREEN      = $8000
+BUFFER      = $7C00     ; 1000-byte back buffer, page-aligned; target of all drawing
+VIA_PORTB   = $E840     ; VIA port B (PB5 = VBLANK signal)
+RETRACE_BIT = $20       ; PB5 mask: LOW during VBLANK, HIGH during active display
+PCR         = $E84C     ; VIA Peripheral Control Register; bits 3:1 select charset
+PCR_U       = $0C       ; PCR bits 3:1 = 110 -> uppercase/graphics set (default)
+PCR_L       = $0E       ; PCR bits 3:1 = 111 -> lowercase/text set
 
 ; ---- Layout constants ---------------------------------
-PANEL_ROWS  = 18                ; visible directory rows in each panel (rows 4..21)
-PANEL_WIDTH = 20                ; columns per panel including frame borders
-PANEL_INNER = 18                ; inner content columns (excluding frame borders)
-MAX_ENTRY   = 64                ; entries per panel
-ENT_SIZE   = 20                 ; bytes per entry record
-                                ; layout: blo, bhi, type, name[16], pad
+
+PANEL_ROWS  = 18        ; visible directory rows in each panel (rows 4..21)
+PANEL_WIDTH = 20        ; columns per panel including frame borders
+PANEL_INNER = 18        ; inner content columns (excluding frame borders)
+MAX_ENTRY   = 64        ; entries per panel
+ENT_SIZE    = 20        ; bytes per entry record
+                        ; layout: blo, bhi, type, name[16], pad
 
 ; ---- Viewer layout constants ---------------------------
-VIEW_ROWS      = 21             ; visible content rows (rows 2..22 inside frame)
-VIEW_TEXT_COLS = 38             ; columns per text-mode row (cols 1..38 inside frame)
-VIEW_HEX_COLS  = 8              ; bytes per hex-mode row
-VIEW_CHUNK     = 2048           ; chunk buffer size for partial load
-VIEW_LFN       = 3              ; logical file number for the viewer
+
+VIEW_ROWS      = 21     ; visible content rows (rows 2..22 inside frame)
+VIEW_TEXT_COLS = 38     ; columns per text-mode row (cols 1..38 inside frame)
+VIEW_HEX_COLS  = 8      ; bytes per hex-mode row
+VIEW_CHUNK     = 2048   ; chunk buffer size for partial load
+VIEW_LFN       = 3      ; logical file number for the viewer
 
 ; ---- ZP pointers (borrowed) ---------------------------
-sp_lo   = $FB                   ; primary indirect pointer (source / entry)
-sp_hi   = $FC
-dp_lo   = $FD                   ; secondary indirect pointer (screen dest)
-dp_hi   = $FE
+
+sp_lo = $FB             ; primary indirect pointer (source / entry)
+sp_hi = $FC
+dp_lo = $FD             ; secondary indirect pointer (screen dest)
+dp_hi = $FE
 
 ; ---- PETSCII / screen codes ---------------------------
-SC_SPACE  = $20
-SC_DOT    = $2E           ; screen code for '.' (non-printable placeholder)
+
+SC_SPACE = $20
+SC_DOT   = $2E          ; screen code for '.' (non-printable placeholder)
+
 ; Center-line box-drawing style (see docs/skill/commodore-pet-skill/system/graphics.md)
 ; All codes are identical in both character sets -- no charset switching needed.
-BOX_TL    = $70           ; corner TL (h-right + v-down)
-BOX_TR    = $6E           ; corner TR (h-left + v-down)
-BOX_BR    = $7D           ; corner BR (h-left + v-up)
-BOX_BL    = $6D           ; corner BL (h-right + v-up)
-BOX_H     = $40           ; horizontal center line
-BOX_V     = $5D           ; vertical center line
-BOX_TJD   = $72           ; T-junction down (h-both + v-down)
-BOX_TJU   = $71           ; T-junction up (h-both + v-up)
-BOX_TRIGHT = $6B          ; T-junction right (v-both + h-right)
-BOX_TLEFT  = $73          ; T-junction left (v-both + h-left)
-DOT_H     = $60           ; dotted horizontal line
-HB_LEFT   = $61           ; left half block (left 4px filled)
-HB_RLEFT  = $E1           ; reversed left half block (right 4px filled)
+
+BOX_TL     = $70        ; corner TL (h-right + v-down)
+BOX_TR     = $6E        ; corner TR (h-left + v-down)
+BOX_BR     = $7D        ; corner BR (h-left + v-up)
+BOX_BL     = $6D        ; corner BL (h-right + v-up)
+BOX_H      = $40        ; horizontal center line
+BOX_V      = $5D        ; vertical center line
+BOX_TJD    = $72        ; T-junction down (h-both + v-down)
+BOX_TJU    = $71        ; T-junction up (h-both + v-up)
+BOX_TRIGHT = $6B        ; T-junction right (v-both + h-right)
+BOX_TLEFT  = $73        ; T-junction left (v-both + h-left)
+DOT_H      = $60        ; dotted horizontal line
+HB_LEFT    = $61        ; left half block (left 4px filled)
+HB_RLEFT   = $E1        ; reversed left half block (right 4px filled)
 
 ; ---- PETSCII keys -------------------------------------
-K_UP    = $91
-K_DOWN  = $11
-K_LEFT  = $9D
-K_RIGHT = $1D
-K_HOME  = $13
-K_RETURN= $0D
-K_DEL   = $14
-K_STOP  = $03
-K_SPACE = $20
-K_TAB   = $09
+
+K_UP     = $91
+K_DOWN   = $11
+K_LEFT   = $9D
+K_RIGHT  = $1D
+K_HOME   = $13
+K_RETURN = $0D
+K_DEL    = $14
+K_STOP   = $03
+K_SPACE  = $20
+K_TAB    = $09
 
 ; ---- PETSCII characters used in DOS commands ----------
-CH_S    = $53
-CH_R    = $52
-CH_C    = $43
-CH_N    = $4E
-CH_L    = $4C
-CH_D    = $44
-CH_Q    = $51
-CH_Y    = $59
-CH_V    = $56
-CH_H    = $48
-CH_T    = $54
-CH_A    = $41
-CH_U    = $55
-CH_E    = $45
-CH_M    = $4D           ; Menu key
-CH_F    = $46           ; File menu shortcut
-CH_I    = $49           ; Info menu item
-CH_0    = $30
+
+CH_S     = $53
+CH_R     = $52
+CH_C     = $43
+CH_N     = $4E
+CH_L     = $4C
+CH_D     = $44
+CH_Q     = $51
+CH_Y     = $59
+CH_V     = $56
+CH_H     = $48
+CH_T     = $54
+CH_A     = $41
+CH_U     = $55
+CH_E     = $45
+CH_M     = $4D          ; Menu key
+CH_F     = $46          ; File menu shortcut
+CH_I     = $49          ; Info menu item
+CH_0     = $30
 CH_COLON = $3A
-CH_EQ   = $3D
+CH_EQ    = $3D
 
 ; ---- Menu layout constants ----------------------------
-MENU_COUNT     = 3      ; number of menus (File, Disk, Help)
-MENU_FILE      = 0
-MENU_DISK      = 1
-MENU_HELP      = 2
-DROP_WIDTH     = 12     ; dropdown interior width (items area)
-DROP_COLS      = 14     ; dropdown total width including borders
+
+MENU_COUNT = 3          ; number of menus (File, Disk, Help)
+MENU_FILE  = 0
+MENU_DISK  = 1
+MENU_HELP  = 2
+DROP_WIDTH = 12         ; dropdown interior width (items area)
+DROP_COLS  = 14         ; dropdown total width including borders
 
         org $0401
 
@@ -159,7 +173,7 @@ nextline:
 
         word 0                  ; end-of-BASIC-program marker ($040B-$040C)
 
-filler_40d:     byte 0          ; $040D -- padding so SYS 1038 lands on JMP at $040E
+filler_40d:     byte 0  ; $040D -- padding so SYS 1038 lands on JMP at $040E
 
 ; SYS 1038 = $040E lands on this JMP; it transfers control to the real start.
 
@@ -175,28 +189,32 @@ saved_fc:       byte 0
 saved_fd:       byte 0
 saved_fe:       byte 0
 
-active_panel:   byte 0          ; 0 = left, 1 = right
+active_panel:   byte 0  ; 0 = left, 1 = right
 quit_flag:      byte 0
-status_msg:     byte 0          ; nonzero -> status_buf overrides help row
+status_msg:     byte 0  ; nonzero -> status_buf overrides help row
 key_val:        byte 0
 
 ; ---- Per-panel state ----------------------------------
+
 p_drive:        byte 8, 8
 p_count:        byte 0, 0
 p_sel:          byte 0, 0
 p_top:          byte 0, 0
 
 ; 16 PETSCII chars per panel for disk title (panel*16 offset)
+
 p_title:        ds 32, 0
 
 ; ---- Menu state ---------------------------------------
-menu_active:    byte 0          ; 0 = panel mode, 1 = menu mode
-menu_idx:       byte 0          ; current menu (0=File, 1=Disk, 2=Help)
-menu_sel:       byte 0          ; selected item within current dropdown
-menu_debounce:  byte 0          ; counter: ignore opening key while nonzero
-menu_open_key:  byte 0          ; PETSCII of key that opened menu (for debounce)
+
+menu_active:    byte 0  ; 0 = panel mode, 1 = menu mode
+menu_idx:       byte 0  ; current menu (0=File, 1=Disk, 2=Help)
+menu_sel:       byte 0  ; selected item within current dropdown
+menu_debounce:  byte 0  ; counter: ignore opening key while nonzero
+menu_open_key:  byte 0  ; PETSCII of key that opened menu (for debounce)
 
 ; ---- Find/filter state --------------------------------
+
 p_filter:       byte 0, 0       ; nonzero = filter active per panel
 p_filter_str:   ds 32, 0        ; 16-char filter string per panel
 p_filter_len:   byte 0, 0       ; filter string length per panel
@@ -210,6 +228,7 @@ start:
         jsr init
 
         ; Load both panels with drive 8 directory
+
         lda #0
         jsr load_panel
         lda #1
@@ -221,26 +240,29 @@ main_loop:
 
         lda menu_active
         bne ml_dispatch
-        ldx menu_debounce        ; decrement debounce counter
+        ldx menu_debounce       ; decrement debounce counter
         beq ml_no_db2
         dex
         stx menu_debounce
+
 ml_no_db2:
 
         jsr GETIN
         beq main_loop
         sta key_val
-        lda menu_debounce        ; during debounce, ignore the close key
+        lda menu_debounce       ; during debounce, ignore the close key
         beq ml_check_key
         lda key_val
-        cmp menu_open_key        ; menu_open_key holds the close key during close debounce
+        cmp menu_open_key       ; menu_open_key holds the close key during close debounce
         beq main_loop
+
 ml_check_key:
 
         jsr dispatch_key
         lda quit_flag
         bne do_exit
         jmp main_loop
+
 ml_dispatch:
 
         jsr menu_loop
@@ -262,14 +284,18 @@ do_exit:
 ; =========================================================
 
 ; pet_setnam: A=length, X=addr_lo, Y=addr_hi
+
 pet_setnam:
+
         sta PET_FNLEN
         stx PET_FNADR_LO
         sty PET_FNADR_HI
         rts
 
 ; pet_setlfs: A=LFN, X=DEV, Y=SA
+
 pet_setlfs:
+
         sta PET_LA
         stx PET_DEV
         sty PET_SA
@@ -280,21 +306,27 @@ pet_setlfs:
 ; The PET OPEN routine doesn't use carry for errors -- it
 ; jumps to the BASIC error handler on failure.  We detect
 ; success by checking whether $AE (file count) increased.
+
 pet_open:
-        lda $AE         ; file count before
+
+        lda $AE                 ; file count before
         pha
         jsr PET_OPEN_LOGIC
         pla
-        cmp $AE         ; old vs new: C=0 if old < new (increased)
-        bcc po_ok       ; $AE increased -> success
-        sec             ; carry set = error
+        cmp $AE                 ; old vs new: C=0 if old < new (increased)
+        bcc po_ok               ; $AE increased -> success
+        sec                     ; carry set = error
         rts
+
 po_ok:
-        clc             ; carry clear = success
+
+        clc                     ; carry clear = success
         rts
 
 ; pet_close: A = logical file number to close
+
 pet_close:
+
         sta PET_LA
         jsr PET_CLOSE_LOGIC
         rts
@@ -306,6 +338,7 @@ pet_close:
 init:
 
         ; Save the ZP bytes we will borrow
+
         lda sp_lo
         sta saved_fb
         lda sp_hi
@@ -365,6 +398,7 @@ exit_program:
         sta BLNSW
 
         ; Restore ZP
+
         lda saved_fb
         sta sp_lo
         lda saved_fc
@@ -393,9 +427,9 @@ dispatch_key:
         beq do_view
         cmp #CH_M
         beq do_menu_open
-        cmp #$12               ; RVS ON (Tab) -> toggle menu
+        cmp #$12                ; RVS ON (Tab) -> toggle menu
         beq do_menu_open
-        cmp #$92               ; RVS OFF (Shift+Tab) -> toggle menu
+        cmp #$92                ; RVS OFF (Shift+Tab) -> toggle menu
         beq do_menu_open
         cmp #K_RETURN
         beq do_switch
@@ -458,12 +492,12 @@ do_menu_open:
         lda #1
         sta menu_active
         lda key_val
-        sta menu_open_key        ; remember key for debounce
+        sta menu_open_key       ; remember key for debounce
         lda #MENU_FILE
         sta menu_idx
         lda #0
         sta menu_sel
-        lda #30                  ; debounce ~0.5s (30 frames at 60Hz)
+        lda #30                 ; debounce ~0.5s (30 frames at 60Hz)
         sta menu_debounce
         jsr full_redraw
         rts
@@ -480,8 +514,8 @@ do_view:        jmp op_view
 
 menu_loop:
 
-        jsr full_redraw          ; draw panels + menu bar + status line
-        jsr draw_dropdown        ; overlay the dropdown
+        jsr full_redraw         ; draw panels + menu bar + status line
+        jsr draw_dropdown       ; overlay the dropdown
         jsr present_screen
         jmp ml_wait
 
@@ -491,38 +525,43 @@ ml_close_jmp:
 
 ml_wait:
 
-        ldx menu_debounce        ; decrement debounce counter each iteration
+        ldx menu_debounce       ; decrement debounce counter each iteration
         beq ml_no_db
         dex
         stx menu_debounce
+
 ml_no_db:
 
         jsr GETIN
         beq ml_wait
         sta key_val
-        lda menu_debounce        ; during debounce, ignore the opening key
+        lda menu_debounce       ; during debounce, ignore the opening key
         bne ml_skip_open_key
         jmp ml_check_keys
+
 ml_skip_open_key:
 
         lda key_val
         cmp menu_open_key
         beq ml_wait
+
 ml_check_keys:
 
         lda key_val
         cmp #CH_M
         beq ml_close_jmp
-        cmp #$12               ; RVS ON (Tab) -> close menu
+        cmp #$12                ; RVS ON (Tab) -> close menu
         beq ml_close_jmp
-        cmp #$92               ; RVS OFF (Shift+Tab) -> close menu
+        cmp #$92                ; RVS OFF (Shift+Tab) -> close menu
         beq ml_close_jmp
         cmp #K_STOP
         beq ml_close_jmp
         cmp #K_RETURN
         bne ml_skip_activate
         jmp do_menu_activate
+
 ml_skip_activate:
+
         cmp #K_LEFT
         beq do_menu_prev
         cmp #K_RIGHT
@@ -534,24 +573,30 @@ ml_skip_activate:
         cmp #CH_F
         bne ml_not_f
         jmp do_menu_file
+
 ml_not_f:
+
         cmp #CH_D
         bne ml_not_d
         jmp do_menu_disk
+
 ml_not_d:
+
         cmp #CH_H
         bne ml_not_h
         jmp do_menu_help
+
 ml_not_h:
+
         jmp ml_wait
 
 do_menu_close:
 
         lda key_val
-        sta menu_open_key        ; save close key for debounce
+        sta menu_open_key       ; save close key for debounce
         lda #0
         sta menu_active
-        lda #30                  ; debounce close key too
+        lda #30                 ; debounce close key too
         sta menu_debounce
         jsr full_redraw
         jsr flush_keys
@@ -563,10 +608,12 @@ do_menu_prev:
         beq dmp_wrap
         dec menu_idx
         jmp dmp_done
+
 dmp_wrap:
 
         lda #(MENU_COUNT-1)
         sta menu_idx
+
 dmp_done:
 
         lda #0
@@ -581,9 +628,11 @@ do_menu_next:
         lda #0
         sta menu_idx
         jmp dmn_done
+
 dmn_inc:
 
         inc menu_idx
+
 dmn_done:
 
         lda #0
@@ -596,9 +645,11 @@ do_menu_up:
         beq dmu_wrap
         dec menu_sel
         rts
+
 dmu_wrap:
 
         ; wrap to last item in current menu
+
         ldx menu_idx
         lda menu_item_count,x
         sta menu_sel
@@ -615,6 +666,7 @@ do_menu_down:
         lda #0
         sta menu_sel
         rts
+
 dmd_inc:
 
         inc menu_sel
@@ -646,6 +698,7 @@ do_menu_help:
         rts
 
 ; do_menu_activate: execute the selected menu item
+
 do_menu_activate:
 
         lda menu_idx
@@ -751,39 +804,52 @@ dma_about:
 draw_dropdown:
 
         ; Get the dropdown's left column and item count
+
         ldx menu_idx
         lda menu_col,x
         sta dd_col
         lda menu_item_count,x
         sta dd_count
+
         ; Draw side borders and items for rows 1..(count+1)
+
         lda dd_count
         clc
         adc #1
-        sta dd_rows              ; rows = count + 1 (includes bottom border)
+        sta dd_rows             ; rows = count + 1 (includes bottom border)
+
         ; Draw each row
-        ldx #1                   ; start at row 1
+
+        ldx #1                  ; start at row 1
 
 dd_row_loop:
 
         stx dd_row
-        jsr row_addr_sp          ; sp = BUFFER + row * 40
+        jsr row_addr_sp         ; sp = BUFFER + row * 40
+
         ; Left border
+
         ldy dd_col
         lda #BOX_V
         sta (sp_lo),y
+
         ; Right border
+
         lda dd_col
         clc
         adc #DROP_COLS-1
         tay
         lda #BOX_V
         sta (sp_lo),y
+
         ; Is this the bottom border row?
+
         txa
         cmp dd_rows
         bne dd_item_row
+
         ; Bottom border: BL corner, H line, BR corner
+
         ldy dd_col
         lda #BOX_BL
         sta (sp_lo),y
@@ -793,7 +859,9 @@ dd_row_loop:
         tay
         lda #BOX_BR
         sta (sp_lo),y
+
         ; Horizontal line between corners
+
         lda dd_col
         clc
         adc #1
@@ -805,9 +873,11 @@ dd_bot_fill:
         sta (sp_lo),y
         iny
         cpy dd_col
-        bcc dd_bot_done          ; wrapped past 39
-        sbc #1                   ; undo the iny effect on comparison... no
+        bcc dd_bot_done         ; wrapped past 39
+        sbc #1                  ; undo the iny effect on comparison... no
+
         ; Better: compare with right border col
+
         lda dd_col
         clc
         adc #DROP_COLS-1
@@ -822,6 +892,7 @@ dd_bot_fill2:
         iny
         cpy dd_tmp
         bne dd_bot_fill2
+
 dd_bot_done:
 
         jmp dd_next_row
@@ -830,13 +901,18 @@ dd_item_row:
 
         ; Draw the item text at this row
         ; Item index = row - 1
+
         txa
         sec
         sbc #1
         sta dd_item_idx
+
         ; Get the item label from the menu's item table
+
         jsr dd_get_item_label
+
         ; Write label into the dropdown interior (cols dd_col+1 .. dd_col+DROP_COLS-2)
+
         lda dd_col
         clc
         adc #1
@@ -859,16 +935,20 @@ dd_label_sp:
 dd_label_store:
 
         ; Check if this item is selected (reverse video)
+
         ldx dd_item_idx
         cpx menu_sel
         bne dd_label_rev
+
         ; Selected: normal video (bar is already reversed? No, bar is space)
         ; Actually: selected item = reversed, unselected = normal
+
         jmp dd_label_write
 
 dd_label_rev:
 
         ; unselected: normal video
+
         jmp dd_label_write
 
 dd_label_write:
@@ -882,10 +962,13 @@ dd_label_write:
 dd_label_done:
 
         ; If this is the selected item, reverse the entire item row
+
         ldx dd_item_idx
         cpx menu_sel
         bne dd_next_row
+
         ; Reverse the interior cols
+
         lda dd_col
         clc
         adc #1
@@ -920,15 +1003,19 @@ dd_next_row:
         cpx dd_rows
         bcc dd_row_loop_jmp
         rts
+
 dd_row_loop_jmp:
+
         jmp dd_row_loop
 
 ; dd_get_item_label: get the label for menu_idx/dd_item_idx into dd_label_buf
+
 dd_get_item_label:
 
         ; Each menu has a table of item labels
         ; Labels are fixed-length (8 chars + shortcut char = 9 bytes per item)
         ; For simplicity, use lookup by menu and item index
+
         lda menu_idx
         cmp #MENU_FILE
         beq dd_gil_file
@@ -972,6 +1059,7 @@ dd_gil_help:
 dd_gil_copy:
 
         ; Copy up to DROP_WIDTH chars from (sp_lo) to dd_label_buf
+
         ldy #0
 
 dd_gil_loop:
@@ -987,6 +1075,7 @@ dd_gil_loop:
 dd_gil_fill:
 
         ; Fill rest with zeros
+
         lda #0
         sta dd_label_buf,y
         iny
@@ -998,16 +1087,23 @@ dd_gil_done:
         rts
 
 ; Menu data tables
-menu_col:       byte 3, 9, 35    ; column positions for File, Disk, Help titles
+
+menu_col:       byte 3, 9, 35   ; column positions for File, Disk, Help titles
 
 menu_item_count: byte 7, 2, 1   ; number of items per menu
 
 ; Menu item labels (null-terminated PETSCII strings)
+
 menu_file_labels:
+
         word mfl_view, mfl_copy, mfl_rename, mfl_delete, mfl_info, mfl_find, mfl_quit
+
 menu_disk_labels:
+
         word mdl_change, mdl_refresh
+
 menu_help_labels:
+
         word mhl_about
 
 mfl_view:       byte "VIEW", 0
@@ -1024,6 +1120,7 @@ mdl_refresh:    byte "REFRESH", 0
 mhl_about:      byte "ABOUT", 0
 
 ; Dropdown temporaries
+
 dd_col:         byte 0
 dd_count:       byte 0
 dd_rows:        byte 0
@@ -1067,7 +1164,9 @@ cursor_down:
         clc
         adc #1
         sta p_sel,x
+
         ; if past visible window, scroll
+
         sec
         sbc #(PANEL_ROWS-1)
         bcc cd_done
@@ -1091,6 +1190,7 @@ full_redraw:
         jsr draw_menu_bar
         jsr draw_frames
         jsr draw_status_line
+
         ; fall through
 
 redraw_panels:
@@ -1147,17 +1247,23 @@ draw_menu_bar:
 
         ldx #0
         jsr row_addr_sp
+
         ; Left border
+
         ldy #0
-        lda #HB_RLEFT            ; $E1 reversed left half-block
+        lda #HB_RLEFT           ; $E1 reversed left half-block
         sta (sp_lo),y
+
         ; Right border
+
         ldy #39
-        lda #HB_LEFT             ; $61 left half-block
+        lda #HB_LEFT            ; $61 left half-block
         sta (sp_lo),y
+
         ; Fill cols 1-38 with reversed space
+
         ldy #1
-        lda #$A0                 ; reversed space
+        lda #$A0                ; reversed space
 
 dmb_fill:
 
@@ -1165,37 +1271,43 @@ dmb_fill:
         iny
         cpy #39
         bne dmb_fill
+
         ; Write menu titles: FILE at cols 3-6, DISK at cols 9-12, '-' at col 35
         ; Each title letter is reversed unless it is the active menu
         ; FILE = screen codes $06,$09,$0C,$05
+
         ldy #3
-        lda #$06                 ; 'F'
+        lda #$06                ; 'F'
         jsr dmb_write_title_char
         ldy #4
-        lda #$09                 ; 'I'
+        lda #$09                ; 'I'
         jsr dmb_write_title_char
         ldy #5
-        lda #$0C                 ; 'L'
+        lda #$0C                ; 'L'
         jsr dmb_write_title_char
         ldy #6
-        lda #$05                 ; 'E'
+        lda #$05                ; 'E'
         jsr dmb_write_title_char
+
         ; DISK = screen codes $04,$09,$13,$0B
+
         ldy #9
-        lda #$04                 ; 'D'
+        lda #$04                ; 'D'
         jsr dmb_write_title_char
         ldy #10
-        lda #$09                 ; 'I'
+        lda #$09                ; 'I'
         jsr dmb_write_title_char
         ldy #11
-        lda #$13                 ; 'S'
+        lda #$13                ; 'S'
         jsr dmb_write_title_char
         ldy #12
-        lda #$0B                 ; 'K'
+        lda #$0B                ; 'K'
         jsr dmb_write_title_char
+
         ; '—' (Help) at col 35, screen code $40 (horizontal line)
+
         ldy #35
-        lda #$40                 ; '—'
+        lda #$40                ; '—'
         jsr dmb_write_title_char
         rts
 
@@ -1203,12 +1315,15 @@ dmb_fill:
 ; If menu_active and this position is in the active menu title,
 ; write normal video (no bit 7). Otherwise write reversed (bit 7 set).
 ; The active menu title columns are: File=3-6, Disk=9-12, Help=35.
+
 dmb_write_title_char:
 
         pha                     ; save screen code
         lda menu_active
         beq dmb_rev             ; menu not active -> reverse all
+
         ; Check if Y is in the active menu's column range
+
         lda menu_idx
         cmp #MENU_FILE
         bne dmb_chk_disk
@@ -1217,6 +1332,7 @@ dmb_write_title_char:
         cpy #7
         bcc dmb_normal          ; cols 3-6 = File title
         jmp dmb_rev
+
 dmb_chk_disk:
 
         cmp #MENU_DISK
@@ -1226,16 +1342,19 @@ dmb_chk_disk:
         cpy #13
         bcc dmb_normal          ; cols 9-12 = Disk title
         jmp dmb_rev
+
 dmb_chk_help:
 
         cpy #35
         beq dmb_normal          ; col 35 = Help title
+
 dmb_rev:
 
         pla
-        ora #$80               ; reverse video
+        ora #$80                ; reverse video
         sta (sp_lo),y
         rts
+
 dmb_normal:
 
         pla
@@ -1254,6 +1373,7 @@ dmb_normal:
 draw_frames:
 
         ; Row 1 top
+
         ldx #1
         jsr row_addr_sp
         ldy #0
@@ -1268,10 +1388,10 @@ df_top1:
         iny
         cpy #(PANEL_WIDTH-1)
         bne df_top1
-        lda #BOX_TR              ; left panel top-right corner (col 19)
+        lda #BOX_TR             ; left panel top-right corner (col 19)
         sta (sp_lo),y
         iny
-        lda #BOX_TL              ; right panel top-left corner (col 20)
+        lda #BOX_TL             ; right panel top-left corner (col 20)
         sta (sp_lo),y
         iny
         lda #BOX_H
@@ -1286,6 +1406,7 @@ df_top2:
         sta (sp_lo),y
 
         ; Rows 2..22 sides
+
         ldx #2
 
 df_sides:
@@ -1310,6 +1431,7 @@ df_sides:
         bne df_sides
 
         ; Row 3: separator line (T-right, H*18, T-left for each panel)
+
         ldx #3
         jsr row_addr_sp
         ldy #0
@@ -1342,6 +1464,7 @@ df_sep2:
         sta (sp_lo),y
 
         ; Row 22: dotted separator line (V, dotted*18, V for each panel)
+
         ldx #22
         jsr row_addr_sp
         ldy #0
@@ -1374,6 +1497,7 @@ df_dot2:
         sta (sp_lo),y
 
         ; Row 23 bottom
+
         ldx #23
         jsr row_addr_sp
         ldy #0
@@ -1388,10 +1512,10 @@ df_bot1:
         iny
         cpy #(PANEL_WIDTH-1)
         bne df_bot1
-        lda #BOX_BR              ; left panel bottom-right corner (col 19)
+        lda #BOX_BR             ; left panel bottom-right corner (col 19)
         sta (sp_lo),y
         iny
-        lda #BOX_BL              ; right panel bottom-left corner (col 20)
+        lda #BOX_BL             ; right panel bottom-left corner (col 20)
         sta (sp_lo),y
         iny
         lda #BOX_H
@@ -1417,15 +1541,21 @@ draw_status_line:
 
         ldx #24
         jsr row_addr_sp
+
         ; Left border
+
         ldy #0
         lda #HB_RLEFT
         sta (sp_lo),y
+
         ; Right border
+
         ldy #39
         lda #HB_LEFT
         sta (sp_lo),y
+
         ; Fill cols 1-38 with reversed space
+
         ldy #1
         lda #$A0
 
@@ -1435,14 +1565,19 @@ dsl_fill:
         iny
         cpy #39
         bne dsl_fill
+
         ; If status_msg is set, overlay the status buffer
+
         lda status_msg
         bne dsl_status
+
         ; Otherwise show selected file info
+
         jsr draw_status_fileinfo
         rts
 
 ; Overlay status_buf (PETSCII screen codes) into the reversed bar
+
 dsl_status:
 
         ldy #1
@@ -1452,7 +1587,7 @@ dsl_stat_loop:
 
         lda status_buf,x
         beq dsl_stat_done
-        ora #$80               ; reverse video
+        ora #$80                ; reverse video
         sta (sp_lo),y
         inx
         iny
@@ -1467,6 +1602,7 @@ dsl_stat_done:
 ; Format: [border] filename(16) spaces... size_bytes(right-aligned,~36) sp type [border]
 ; Uses sp_lo/sp_hi for the entry record, dp_lo/dp_hi for screen row 24.
 ; Record layout: y=0 blo, y=1 bhi, y=2 type(screen code), y=3..18 name(PETSCII)
+
 draw_status_fileinfo:
 
         jsr selected_entry_sp
@@ -1476,11 +1612,14 @@ draw_status_fileinfo:
 dsf_have_entry:
 
         ; Set dp to row 24 start in BUFFER
+
         lda #<(BUFFER+24*40)
         sta dp_lo
         lda #>(BUFFER+24*40)
         sta dp_hi
+
         ; ---- Filename: cols 1-16 (16 chars, left-aligned, reversed) ----
+
         ldx #0
 
 dsf_name_loop:
@@ -1506,8 +1645,8 @@ dsf_name_sp:
 
 dsf_name_store:
 
-        ora #$80               ; reverse video
-        sta dsf_ch             ; save char
+        ora #$80                ; reverse video
+        sta dsf_ch              ; save char
         txa
         clc
         adc #1                  ; screen col = 1 + X
@@ -1520,51 +1659,63 @@ dsf_name_store:
 dsf_name_done:
 
         ; ---- Type char at col 38 (reversed) ----
+
         ldy #2                  ; type at record offset 2 (already screen code)
         lda (sp_lo),y
-        ora #$80               ; reverse video
+        ora #$80                ; reverse video
         ldy #38
         sta (dp_lo),y
+
         ; ---- Read block count from record offsets 0/1 ----
+
         ldy #0
         lda (sp_lo),y
         sta dsf_blo
         iny
         lda (sp_lo),y
         sta dsf_bhi
+
         ; ---- Convert 16-bit block count to 5-digit decimal ----
+
         jsr dsf_format_blocks
+
         ; ---- Write block count right-aligned at cols 32-36 ----
+
         ldx #0
-        stx dsf_lead           ; 0 = still suppressing leading zeroes
+        stx dsf_lead            ; 0 = still suppressing leading zeroes
 
 dsf_blk_write:
 
         lda dsf_blkstr,x
         ldy dsf_lead
         bne dsf_blk_emit
+
         ; Still suppressing leading zeroes
-        cmp #$30               ; '0'
+
+        cmp #$30                ; '0'
         bne dsf_blk_nz
+
         ; It's a leading zero: emit space instead
+
         lda #SC_SPACE
         jmp dsf_blk_emit
 
 dsf_blk_nz:
 
         ; First non-zero digit: stop suppressing
-        sta dsf_ch             ; save digit value
+
+        sta dsf_ch              ; save digit value
         lda #1
         sta dsf_lead
-        lda dsf_ch             ; restore digit value
+        lda dsf_ch              ; restore digit value
 
 dsf_blk_emit:
 
-        ora #$80               ; reverse video
-        sta dsf_ch             ; save char
+        ora #$80                ; reverse video
+        sta dsf_ch              ; save char
         txa
         clc
-        adc #32                ; cols 32-36
+        adc #32                 ; cols 32-36
         tay
         lda dsf_ch
         sta (dp_lo),y
@@ -1580,13 +1731,15 @@ dsf_blo:        byte 0
 dsf_bhi:        byte 0
 dsf_ch:         byte 0
 dsf_lead:       byte 0
-dsf_blkstr:     ds 5, 0          ; 5-digit decimal as PET screen codes
+dsf_blkstr:     ds 5, 0 ; 5-digit decimal as PET screen codes
 
 ; dsf_format_blocks: convert 16-bit dsf_blo/dsf_bhi to 5 PET screen-code digits
 ; Screen codes $30-$39 = digits '0'-'9', so ora #$30 converts value 0-9 to screen code.
+
 dsf_format_blocks:
 
         ; 10000 = $2710
+
         ldy #0
 
 dsf_10k:
@@ -1609,7 +1762,9 @@ dsf_10k_done:
         tya
         ora #$30
         sta dsf_blkstr
+
         ; 1000 = $03E8
+
         ldy #0
 
 dsf_1k:
@@ -1632,7 +1787,9 @@ dsf_1k_done:
         tya
         ora #$30
         sta dsf_blkstr+1
+
         ; 100 = $0064
+
         ldy #0
 
 dsf_100:
@@ -1655,7 +1812,9 @@ dsf_100_done:
         tya
         ora #$30
         sta dsf_blkstr+2
+
         ; 10 = $0A
+
         ldy #0
 
 dsf_10:
@@ -1678,7 +1837,9 @@ dsf_10_done:
         tya
         ora #$30
         sta dsf_blkstr+3
+
         ; 1
+
         lda dsf_blo
         ora #$30
         sta dsf_blkstr+4
@@ -1751,6 +1912,7 @@ draw_panel:
 draw_panel_header:
 
         ; ---- Header row (screen row 2) ----
+
         ldx #2
         jsr row_addr_sp
         lda sp_lo
@@ -1762,6 +1924,7 @@ draw_panel_header:
         sta dp_hi
 
         ; Clear the inner cols
+
         ldy #0
         lda #SC_SPACE
 
@@ -1773,6 +1936,7 @@ dp_hclr:
         bne dp_hclr
 
         ; "8:" (drive number + colon, no space after)
+
         ldx cur_panel
         lda p_drive,x
         clc
@@ -1786,6 +1950,7 @@ dp_hclr:
         sta (dp_lo),y
 
         ; Disk title: copy 16 chars starting at col 2
+
         ldx #0
 
 dp_titcp:
@@ -1834,12 +1999,15 @@ dp_titcp_done:
 draw_panel_rows:
 
         ; ---- File rows: screen rows 4 .. 4+PANEL_ROWS-1 ----
+
         ldx #0
 
 dp_rows:
 
         stx cur_visrow
+
         ; absolute entry index
+
         ldy cur_panel
         lda p_top,y
         clc
@@ -1847,12 +2015,15 @@ dp_rows:
         sta cur_absidx
 
         ; compute row screen address
+
         lda cur_visrow
         clc
         adc #4
         tax
         jsr row_addr_sp
+
         ; inner-col pointer into dp_lo
+
         lda sp_lo
         clc
         adc cur_col
@@ -1862,6 +2033,7 @@ dp_rows:
         sta dp_hi
 
         ; clear inner cols
+
         ldy #0
         lda #SC_SPACE
 
@@ -1873,6 +2045,7 @@ dp_clr:
         bne dp_clr
 
         ; abs_idx < count?
+
         ldy cur_panel
         lda p_count,y
         beq dp_row_done
@@ -1883,6 +2056,7 @@ dp_clr:
         jsr draw_entry
 
         ; Highlight if this is the active panel's selection
+
         lda cur_panel
         cmp active_panel
         bne dp_row_done
@@ -1934,9 +2108,11 @@ dp_tit_a:       byte 0
 draw_entry:
 
         ; sp = entries_pN + cur_absidx * 20
+
         jsr panel_entry_sp
 
         ; ---- Filename: cols 0..14 (15 chars, left-aligned) ----
+
         ldx #0
         ldy #3                  ; record offset
 
@@ -1973,13 +2149,14 @@ de_name_store:
 de_name_done:
 
         ; ---- Block count right-aligned at cols 15..17 ----
+
         ldy #0
         lda (sp_lo),y
         sta num_lo
         iny
         lda (sp_lo),y
         sta num_hi
-        jsr print_num3_right   ; writes right-aligned into cols 15..17
+        jsr print_num3_right    ; writes right-aligned into cols 15..17
 
         rts
 
@@ -1996,6 +2173,7 @@ num_hi:         byte 0
 print_num3:
 
         ; hundreds digit
+
         lda #0
         sta pn_dig
 
@@ -2033,6 +2211,7 @@ pn_h_put:
         sta (dp_lo),y
 
         ; tens digit
+
         lda #0
         sta pn_dig
 
@@ -2050,7 +2229,9 @@ pn_t_done:
 
         lda pn_dig
         bne pn_t_show
+
         ; suppress only if hundreds was also blank
+
         ldy #0
         lda (dp_lo),y
         cmp #SC_SPACE
@@ -2078,6 +2259,7 @@ pn_t_put:
         sta (dp_lo),y
 
         ; ones digit
+
         lda num_lo
         clc
         adc #CH_0
@@ -2096,6 +2278,7 @@ pn_tmp_lo:      byte 0
 print_num3_right:
 
         ; hundreds digit
+
         lda #0
         sta pn_dig
 
@@ -2133,6 +2316,7 @@ pnr_h_put:
         sta (dp_lo),y
 
         ; tens digit
+
         lda #0
         sta pn_dig
 
@@ -2177,6 +2361,7 @@ pnr_t_put:
         sta (dp_lo),y
 
         ; ones digit
+
         lda num_lo
         clc
         adc #CH_0
@@ -2195,7 +2380,9 @@ mul20:
         sta m20_x4_lo
         lda #0
         sta m20_x4_hi
+
         ; x4: shift left twice
+
         asl m20_x4_lo
         rol m20_x4_hi
         asl m20_x4_lo
@@ -2205,7 +2392,9 @@ mul20:
         sta m20_x16_lo
         lda m20_x4_hi
         sta m20_x16_hi
+
         ; x16: shift left twice more
+
         asl m20_x16_lo
         rol m20_x16_hi
         asl m20_x16_lo
@@ -2243,7 +2432,9 @@ petscii_to_screen:
         bcc p2s_done            ; $60-$7F unchanged (rare)
         cmp #$C0
         bcc p2s_sub40           ; $80-$BF
+
         ; $C0-$FF
+
         sec
         sbc #$80
         rts
@@ -2272,7 +2463,9 @@ ascii_to_screen:
         beq a2s_dot             ; $7F DEL
         cmp #$80
         bcs a2s_dot             ; $80-$FF non-printable
+
         ; $20-$7E printable ASCII
+
         cmp #$41
         bcc a2s_petscii         ; $20-$40 -> petscii_to_screen
         cmp #$5B
@@ -2281,7 +2474,9 @@ ascii_to_screen:
         bcc a2s_petscii         ; $5B-$60 -> petscii_to_screen
         cmp #$7B
         bcc a2s_lower_az        ; $61-$7A a-z
+
         ; $7B-$7E -> petscii_to_screen
+
 a2s_petscii:
 
         jmp petscii_to_screen
@@ -2289,6 +2484,7 @@ a2s_petscii:
 a2s_upper_az:
 
         ; A-Z: UPPER -> -$40 ($01-$1A); LOWER -> identity ($41-$5A)
+
         pha                     ; save byte
         lda view_charset
         bne a2s_ua_lower
@@ -2296,6 +2492,7 @@ a2s_upper_az:
         sec
         sbc #$40
         rts
+
 a2s_ua_lower:
 
         pla                     ; restore byte (identity)
@@ -2304,6 +2501,7 @@ a2s_ua_lower:
 a2s_lower_az:
 
         ; a-z: LOWER -> -$60 ($01-$1A); UPPER -> -$60 then ORA #$80
+
         pha                     ; save byte
         lda view_charset
         bne a2s_la_lower
@@ -2312,6 +2510,7 @@ a2s_lower_az:
         sbc #$60
         ora #$80                ; inverse-video uppercase
         rts
+
 a2s_la_lower:
 
         pla                     ; restore byte
@@ -2372,6 +2571,7 @@ load_panel:
         sta p_top,x
 
         ; Zero this panel's title
+
         lda cur_panel
         beq lp_zt_p0
         ldx #16
@@ -2401,12 +2601,14 @@ lp_open:
         jsr CLALL
 
         ; SETNAM("$")
+
         lda #1
         ldx #<dollar
         ldy #>dollar
         jsr pet_setnam
 
         ; SETLFS (LFN=2, dev=p_drive, SA=0)
+
         ldx cur_panel
         lda p_drive,x
         sta cur_drive
@@ -2425,23 +2627,27 @@ lp_chkin:
         jsr restore_zp
         ldx #2
         jsr CHKIN
+
         ; PET CHKIN jumps to error handler on failure;
         ; if it returns, it succeeded.  No carry check.
 
 lp_skip_hdr:
 
         ; Skip 2-byte load address
+
         jsr CHRIN
         jsr CHRIN
 
         ; ---- First "line" = disk title ----
         ; Skip next-line ptr (2) and line# (2)
+
         jsr CHRIN
         jsr CHRIN
         jsr CHRIN
         jsr CHRIN
 
         ; sp = base of p_title[panel*16]
+
         lda cur_panel
         bne lp_tp1
         lda #<p_title
@@ -2460,6 +2666,7 @@ lp_tp1:
 lp_t_loop_init:
 
         ; State 0=before quote, 1=in title, 2=after
+
         lda #0
         sta lp_state
         sta lp_tch
@@ -2484,7 +2691,9 @@ lp_t_nz:
         beq lp_t_s0
         cpx #1
         beq lp_t_s1
+
         ; state 2: discard
+
         jmp lp_t_loop
 
 lp_t_s0:
@@ -2526,6 +2735,7 @@ lp_t_eol:
 lp_e_loop:
 
         ; Read next-line ptr (2 bytes); both zero means end already
+
         jsr CHRIN
         sta lp_blo
         lda STATUS
@@ -2542,6 +2752,7 @@ lp_e_n2:
 lp_e_blo:
 
         ; Read block count
+
         jsr CHRIN
         sta lp_blo
         jsr CHRIN
@@ -2555,6 +2766,7 @@ lp_e_blo:
 lp_have:
 
         ; Check capacity
+
         ldx cur_panel
         lda p_count,x
         cmp #MAX_ENTRY
@@ -2564,20 +2776,26 @@ lp_have:
 lp_room:
 
         ; Compute entry record address into sp
+
         jsr entry_record_sp
 
         ; Store block count
+
         ldy #0
         lda lp_blo
         sta (sp_lo),y
         iny
         lda lp_bhi
         sta (sp_lo),y
+
         ; Default type = space
+
         ldy #2
         lda #SC_SPACE
         sta (sp_lo),y
+
         ; Zero name region
+
         ldy #3
         ldx #0
 
@@ -2591,6 +2809,7 @@ lp_zname:
         bne lp_zname
 
         ; Parse: skip to first quote, read until close quote, find type
+
         lda #0
         sta lp_state
         sta lp_nch
@@ -2623,6 +2842,7 @@ lp_b_nz:
 lp_b_s0:
 
         ; before quote
+
         cmp #$22
         bne lp_b_loop
         lda #1
@@ -2632,6 +2852,7 @@ lp_b_s0:
 lp_b_s1:
 
         ; in name
+
         cmp #$22
         beq lp_b_s1_cl
         cmp #$A0
@@ -2656,11 +2877,14 @@ lp_b_s1_cl:
 lp_b_s2:
 
         ; after closing quote, skip spaces and the lock '<'
+
         cmp #$20
         beq lp_b_loop
         cmp #$3C
         beq lp_b_loop
+
         ; this byte is first type char
+
         jsr petscii_to_screen
         ldy #2
         sta (sp_lo),y
@@ -2673,19 +2897,23 @@ lp_b_s2:
 lp_b_s3:
 
         ; in type tail: ignore remaining
+
         jmp lp_b_loop
 
 lp_b_eof:
 
         ; STATUS hit during entry parse: if any name char, count it
+
         lda lp_nch
         beq lp_done
+
         ; fall through
 
 lp_b_done:
 
         ; Only count entries that actually had a name in quotes
         ; (skips the trailing "BLOCKS FREE." line which has no quoted name)
+
         lda lp_nch
         beq lp_b_skip
         ldx cur_panel
@@ -2698,6 +2926,7 @@ lp_b_skip:
 lp_skip:
 
         ; Skip rest of this entry's line bytes until $00
+
         jsr CHRIN
         sta lp_byte
         lda STATUS
@@ -2877,6 +3106,7 @@ op_delete:
 op_del_have:
 
         ; Build "S0:NAME"
+
         lda #CH_S
         sta cmd_buf+0
         lda #CH_0
@@ -3261,6 +3491,7 @@ prompt_buf:     ds 17, 0
 prompt_len:     byte 0
 
 ; ---- draw_prompt_label: wipe row 24, write PETSCII label + ": " ----
+
 draw_prompt_label:
 
         ldx #0
@@ -3295,6 +3526,7 @@ dpl_loop:
 dpl_done:
 
         ; Append ": "
+
         lda #CH_COLON
         jsr petscii_to_screen
         sta BUFFER+24*40,x
@@ -3308,6 +3540,7 @@ dpl_done:
 prompt_label_len:       byte 0
 
 ; ---- show_prompt_buf: render current input onto row 24 ----
+
 show_prompt_buf:
 
         ldx #0
@@ -3477,6 +3710,7 @@ present_screen:
 ; flush_keys: drain all pending keys from the keyboard buffer.
 ; Called after menu close to remove auto-repeat keys before the
 ; main loop resumes.
+
 flush_keys:
 
         jsr GETIN
@@ -3490,12 +3724,14 @@ flush_keys:
 ; =========================================================
 
 ; nibble_to_sc: A = nibble (0-15) -> A = screen code for hex digit
+
 nibble_to_sc:
 
         cmp #10
         bcc nts_digit
         sbc #9                  ; carry set: A = nibble - 9 (10->1='A', 15->6='F')
         rts
+
 nts_digit:
 
         clc
@@ -3535,10 +3771,12 @@ view_calc_valid:
         lda vr_bufcur
         cmp view_chunk_len
         bcc vcv_calc
+
 vcv_zero:
 
         lda #0
         rts
+
 vcv_calc:
 
         sec
@@ -3551,9 +3789,11 @@ vcv_calc:
         lda vcv_tmp
         cmp view_row_size
         bcc vcv_done
+
 vcv_clamp:
 
         lda view_row_size
+
 vcv_done:
 
         rts
@@ -3565,22 +3805,31 @@ vcv_done:
 op_info:
 
         jsr selected_entry_sp
-        bcs oi_done              ; empty panel
+        bcs oi_done             ; empty panel
+
         ; Draw a simple info window over the screen
+
         jsr draw_info_window
+
         ; Wait for any key
+
         jsr wait_any_key
+
         ; Restore panels
+
         jsr full_redraw
+
 oi_done:
 
         rts
 
 ; draw_info_window: draw a bordered window with file details
+
 draw_info_window:
 
         ; Draw a window from row 8 to row 16, cols 5 to 34 (30 cols, 9 rows)
         ; Top border
+
         ldx #8
         jsr row_addr_sp
         ldy #5
@@ -3598,7 +3847,9 @@ diw_top:
         ldy #34
         lda #BOX_TR
         sta (sp_lo),y
+
         ; Sides and content for rows 9-15
+
         ldx #9
 
 diw_mid:
@@ -3611,7 +3862,9 @@ diw_mid:
         ldy #34
         lda #BOX_V
         sta (sp_lo),y
+
         ; Clear interior
+
         ldy #6
         lda #SC_SPACE
 
@@ -3625,7 +3878,9 @@ diw_clr:
         inx
         cpx #16
         bne diw_mid
+
         ; Bottom border
+
         ldx #16
         jsr row_addr_sp
         ldy #5
@@ -3643,38 +3898,42 @@ diw_bot:
         ldy #34
         lda #BOX_BR
         sta (sp_lo),y
+
         ; Write title "FILE INFORMATION" at row 9, col 7
+
         ldx #9
         jsr row_addr_sp
         ldy #7
-        lda #$06               ; 'F'
+        lda #$06                ; 'F'
         sta (sp_lo),y
         iny
-        lda #$09               ; 'I'
+        lda #$09                ; 'I'
         sta (sp_lo),y
         iny
-        lda #$0C               ; 'L'
+        lda #$0C                ; 'L'
         sta (sp_lo),y
         iny
-        lda #$05               ; 'E'
+        lda #$05                ; 'E'
         sta (sp_lo),y
         iny
         lda #SC_SPACE
         sta (sp_lo),y
         iny
-        lda #$09               ; 'I'
+        lda #$09                ; 'I'
         sta (sp_lo),y
         iny
-        lda #$0E               ; 'N'
+        lda #$0E                ; 'N'
         sta (sp_lo),y
         iny
-        lda #$06               ; 'F'
+        lda #$06                ; 'F'
         sta (sp_lo),y
         iny
-        lda #$0F               ; 'O'
+        lda #$0F                ; 'O'
         sta (sp_lo),y
+
         ; Write filename at row 11
         ; TODO: write actual file info from selected entry
+
         jsr present_screen
         rts
 
@@ -3692,9 +3951,11 @@ op_about:
         rts
 
 ; draw_about_window: bordered window with program info
+
 draw_about_window:
 
         ; Window: rows 9-15, cols 5-34
+
         ldx #9
         jsr row_addr_sp
         ldy #5
@@ -3754,62 +4015,66 @@ daw_bot:
         ldy #34
         lda #BOX_BR
         sta (sp_lo),y
+
         ; Write "PET COMMANDER" at row 11, col 10
+
         ldx #11
         jsr row_addr_sp
         ldy #10
-        lda #$10               ; 'P'
+        lda #$10                ; 'P'
         sta (sp_lo),y
         iny
-        lda #$05               ; 'E'
+        lda #$05                ; 'E'
         sta (sp_lo),y
         iny
-        lda #$14               ; 'T'
+        lda #$14                ; 'T'
         sta (sp_lo),y
         iny
         lda #SC_SPACE
         sta (sp_lo),y
         iny
-        lda #$03               ; 'C'
+        lda #$03                ; 'C'
         sta (sp_lo),y
         iny
-        lda #$0F               ; 'O'
+        lda #$0F                ; 'O'
         sta (sp_lo),y
         iny
-        lda #$0D               ; 'M'
+        lda #$0D                ; 'M'
         sta (sp_lo),y
         iny
-        lda #$0D               ; 'M'
+        lda #$0D                ; 'M'
         sta (sp_lo),y
         iny
-        lda #$01               ; 'A'
+        lda #$01                ; 'A'
         sta (sp_lo),y
         iny
-        lda #$0E               ; 'N'
+        lda #$0E                ; 'N'
         sta (sp_lo),y
         iny
-        lda #$04               ; 'D'
+        lda #$04                ; 'D'
         sta (sp_lo),y
         iny
-        lda #$05               ; 'E'
+        lda #$05                ; 'E'
         sta (sp_lo),y
         iny
-        lda #$12               ; 'R'
+        lda #$12                ; 'R'
         sta (sp_lo),y
+
         ; Write "v0.3" at row 12, col 13
+
         ldx #12
         jsr row_addr_sp
         ldy #13
-        lda #$96               ; 'V' reversed (lowercase v as reversed)
+        lda #$96                ; 'V' reversed (lowercase v as reversed)
         sta (sp_lo),y
         iny
-        lda #$30               ; '0'
+        lda #$30                ; '0'
         sta (sp_lo),y
         iny
-        lda #SC_DOT            ; '.'
+        lda #SC_DOT             ; '.'
         sta (sp_lo),y
         iny
-        lda #$33               ; '3'
+        lda #$33                ; '3'
         sta (sp_lo),y
         jsr present_screen
         rts
@@ -3823,7 +4088,9 @@ daw_row:        byte 0
 op_change:
 
         jsr draw_change_window
+
         ; Read a 1-2 digit drive number
+
         ldx #0                  ; digit count
 
 oc_input:
@@ -3838,27 +4105,36 @@ oc_input:
         bcc oc_input
         cmp #$3A                ; past '9'
         bcs oc_input
+
         ; Store digit
+
         sta oc_digits,x
         inx
         cpx #2
         bcs oc_input            ; max 2 digits
+
         ; Echo digit on screen (simple)
+
         jmp oc_input
 
 oc_commit:
 
         ; Convert digits to drive number
+
         cpx #0
         beq oc_cancel           ; no digits entered
+
         ; Single digit
+
         lda oc_digits
         sec
         sbc #CH_0
         sta oc_drive
         cpx #2
         bne oc_set_drive
+
         ; Two digits: first * 10 + second
+
         lda oc_digits
         sec
         sbc #CH_0
@@ -3866,7 +4142,7 @@ oc_commit:
         asl
         asl
         clc
-        adc oc_tmp             ; *5
+        adc oc_tmp              ; *5
         asl                     ; *10
         sta oc_tmp
         lda oc_digits+1
@@ -3879,14 +4155,19 @@ oc_commit:
 oc_set_drive:
 
         ; Validate: drive 8-11
+
         cmp #8
         bcc oc_cancel
         cmp #12
         bcs oc_cancel
+
         ; Set the active panel's drive
+
         ldx active_panel
         sta p_drive,x
+
         ; Reload the panel
+
         lda active_panel
         jsr load_panel
         jsr full_redraw
@@ -3898,6 +4179,7 @@ oc_cancel:
         rts
 
 ; draw_change_window: bordered window with drive prompt
+
 draw_change_window:
 
         ldx #10
@@ -3959,56 +4241,60 @@ dcw_bot:
         ldy #31
         lda #BOX_BR
         sta (sp_lo),y
+
         ; Write "CHANGE DRIVE" at row 11, col 10
+
         ldx #11
         jsr row_addr_sp
         ldy #10
-        lda #$03               ; 'C'
+        lda #$03                ; 'C'
         sta (sp_lo),y
         iny
-        lda #$08               ; 'H'
+        lda #$08                ; 'H'
         sta (sp_lo),y
         iny
-        lda #$01               ; 'A'
+        lda #$01                ; 'A'
         sta (sp_lo),y
         iny
-        lda #$0E               ; 'N'
+        lda #$0E                ; 'N'
         sta (sp_lo),y
         iny
-        lda #$06               ; 'G'
+        lda #$06                ; 'G'
         sta (sp_lo),y
         iny
-        lda #$05               ; 'E'
+        lda #$05                ; 'E'
         sta (sp_lo),y
         iny
         lda #SC_SPACE
         sta (sp_lo),y
         iny
-        lda #$04               ; 'D'
+        lda #$04                ; 'D'
         sta (sp_lo),y
         iny
-        lda #$12               ; 'R'
+        lda #$12                ; 'R'
         sta (sp_lo),y
         iny
-        lda #$09               ; 'I'
+        lda #$09                ; 'I'
         sta (sp_lo),y
         iny
-        lda #$16               ; 'V'
+        lda #$16                ; 'V'
         sta (sp_lo),y
         iny
-        lda #$05               ; 'E'
+        lda #$05                ; 'E'
         sta (sp_lo),y
+
         ; Write "NEW: " at row 12, col 12
+
         ldx #12
         jsr row_addr_sp
         ldy #12
-        lda #$0E               ; 'N'
+        lda #$0E                ; 'N'
         sta (sp_lo),y
         iny
-        lda #$05               ; 'E'
+        lda #$05                ; 'E'
         sta (sp_lo),y
         iny
-        lda #$17               ; 'W'
+        lda #$17                ; 'W'
         sta (sp_lo),y
         iny
         lda #CH_COLON
@@ -4032,19 +4318,20 @@ oc_tmp:         byte 0
 op_find:
 
         ; Draw a FIND: prompt on the status line
+
         ldx #24
         jsr row_addr_sp
         ldy #1
-        lda #$06               ; 'F'
+        lda #$06                ; 'F'
         sta (sp_lo),y
         iny
-        lda #$09               ; 'I'
+        lda #$09                ; 'I'
         sta (sp_lo),y
         iny
-        lda #$0E               ; 'N'
+        lda #$0E                ; 'N'
         sta (sp_lo),y
         iny
-        lda #$04               ; 'D'
+        lda #$04                ; 'D'
         sta (sp_lo),y
         iny
         lda #CH_COLON
@@ -4054,7 +4341,9 @@ op_find:
         lda #SC_SPACE
         sta (sp_lo),y
         jsr present_screen
+
         ; Read search string (up to 16 chars)
+
         ldx #0
 
 of_input:
@@ -4067,7 +4356,9 @@ of_input:
         beq of_cancel
         cmp #K_DEL
         bne of_char
+
         ; Backspace
+
         cpx #0
         beq of_input
         dex
@@ -4084,9 +4375,12 @@ of_char:
 of_commit:
 
         ; If empty string, clear filter
+
         cpx #0
         bne of_set_filter
+
         ; Clear filter
+
         ldx active_panel
         lda #0
         sta p_filter,x
@@ -4097,6 +4391,7 @@ of_commit:
 of_set_filter:
 
         ; Copy search string to p_filter_str for active panel
+
         stx of_len
         ldy #0
 
@@ -4107,7 +4402,9 @@ of_copy:
         lda of_buf,y
         ldx active_panel
         beq of_cp_p0
+
         ; Panel 1: offset 16
+
         sta p_filter_str+16,y
         jmp of_cp_next
 
@@ -4155,24 +4452,27 @@ wait_any_key:
 op_view:
 
         jsr selected_entry_sp
-        bcs ov_exit              ; empty panel
+        bcs ov_exit             ; empty panel
         jsr copy_name_to_savename
         jsr view_copy_fname
+
         ; Init per-open viewer state (modes persist across opens)
+
         lda #0
         sta view_top
         sta view_top+1
         sta view_chunk_base
         sta view_chunk_base+1
         sta view_at_eof
-        sta view_pcr_pending    ; no staged PCR write at open
-        jsr view_set_mode_params ; reads persisted view_mode
+        sta view_pcr_pending            ; no staged PCR write at open
+        jsr view_set_mode_params        ; reads persisted view_mode
         jsr view_load_chunk
-        bcs ov_exit              ; open failed, status already set
-        jsr view_apply_charset   ; save PCR charset, switch to view_charset
+        bcs ov_exit                     ; open failed, status already set
+        jsr view_apply_charset          ; save PCR charset, switch to view_charset
         jsr view_loop
-        jsr view_restore_charset ; restore PCR charset -> uppercase
-        jsr full_redraw          ; restore panels
+        jsr view_restore_charset        ; restore PCR charset -> uppercase
+        jsr full_redraw                 ; restore panels
+
 ov_exit:
 
         rts
@@ -4182,6 +4482,7 @@ ov_exit:
 view_copy_fname:
 
         ldx #0
+
 vcf_loop:
 
         cpx savename_len
@@ -4190,6 +4491,7 @@ vcf_loop:
         sta view_fname,x
         inx
         jmp vcf_loop
+
 vcf_done:
 
         stx view_fname_len
@@ -4201,7 +4503,9 @@ view_set_mode_params:
 
         lda view_mode
         beq vsm_text
+
         ; Hex mode: row=8, screen=21*8=168, page=21*8=168 (no overlap)
+
         lda #VIEW_HEX_COLS
         sta view_row_size
         lda #<(VIEW_ROWS*VIEW_HEX_COLS)
@@ -4213,8 +4517,11 @@ view_set_mode_params:
         lda #>(VIEW_ROWS*VIEW_HEX_COLS)
         sta view_page_size+1
         rts
+
 vsm_text:
+
         ; Text mode: row=38, screen=21*38=798, page=20*38=760 (1-line overlap)
+
         lda #VIEW_TEXT_COLS
         sta view_row_size
         lda #<(VIEW_ROWS*VIEW_TEXT_COLS)
@@ -4238,13 +4545,15 @@ view_set_pcr_charset:
 
         ldx view_charset
         beq vspc_upper
-        lda #PCR_L             ; LOWER bits to stage
+        lda #PCR_L              ; LOWER bits to stage
         ldx #$40
         bne vspc_store
+
 vspc_upper:
 
-        lda #PCR_U             ; UPPER bits to stage
+        lda #PCR_U              ; UPPER bits to stage
         ldx #$00
+
 vspc_store:
 
         sta view_pending_pcr_cs ; stage the PCR write (do not touch PCR yet)
@@ -4263,11 +4572,12 @@ view_flush_pcr:
         lda view_pcr_pending
         beq vfp_done
         lda PCR
-        and #$F1               ; clear bits 3:1
+        and #$F1                ; clear bits 3:1
         ora view_pending_pcr_cs ; apply staged bits
         sta PCR
         lda #0
         sta view_pcr_pending
+
 vfp_done:
 
         rts
@@ -4278,7 +4588,7 @@ vfp_done:
 view_apply_charset:
 
         lda PCR
-        and #$0E               ; isolate bits 3:1
+        and #$0E                ; isolate bits 3:1
         sta saved_pcr_cs
         jsr view_set_pcr_charset
         rts
@@ -4320,16 +4630,20 @@ view_load_chunk:
         jsr pet_open
         bcc vlc_opened
         jmp vlc_err
+
 vlc_opened:
 
         jsr restore_zp
         ldx #VIEW_LFN
         jsr CHKIN
+
         ; Skip view_chunk_base bytes
+
         lda view_chunk_base
         sta vlc_skl
         lda view_chunk_base+1
         sta vlc_skh
+
 vlc_skip:
 
         lda vlc_skl
@@ -4341,10 +4655,12 @@ vlc_skip:
         lda vlc_skl
         bne vlc_skip_dec
         dec vlc_skh
+
 vlc_skip_dec:
 
         dec vlc_skl
         jmp vlc_skip
+
 vlc_read_init:
 
         lda #0
@@ -4356,6 +4672,7 @@ vlc_read_init:
         lda #>view_chunk
         sta sp_hi
         ldy #0
+
 vlc_read:
 
         lda view_chunk_len+1
@@ -4365,6 +4682,7 @@ vlc_read:
         lda view_chunk_len
         cmp #<VIEW_CHUNK
         bcs vlc_done
+
 vlc_read_byte:
 
         jsr CHRIN
@@ -4372,6 +4690,7 @@ vlc_read_byte:
         inc view_chunk_len
         bne vlc_chk
         inc view_chunk_len+1
+
 vlc_chk:
 
         lda STATUS
@@ -4380,10 +4699,12 @@ vlc_chk:
         bne vlc_read
         inc sp_hi
         jmp vlc_read
+
 vlc_eof:
 
         lda #1
         sta view_at_eof
+
 vlc_done:
 
         jsr restore_zp
@@ -4392,12 +4713,13 @@ vlc_done:
         jsr pet_close
         clc
         rts
+
 vlc_err:
 
         lda #<msg_view_err
         ldy #>msg_view_err
         jsr set_status
-        jsr present_screen       ; show VIEW OPEN FAILED (no redraw follows)
+        jsr present_screen      ; show VIEW OPEN FAILED (no redraw follows)
         sec
         rts
 
@@ -4408,21 +4730,32 @@ vlc_err:
 view_render:
 
         jsr clear_screen
+
         ; --- Header bar (row 0) ---
+
         jsr view_draw_header
+
         ; --- Content frame (rows 1, 2-22, 23) ---
+
         jsr view_draw_frame
+
         ; --- Content rows (rows 2-22) ---
+
         lda view_mode
         bne vr_hex_mode
         jsr view_render_text
         jmp vr_footer
+
 vr_hex_mode:
 
         jsr view_render_hex
+
 vr_footer:
+
         ; --- Footer bar (row 24) ---
+
         jsr view_draw_footer
+
 vr_done:
 
         jsr present_screen
@@ -4439,6 +4772,7 @@ view_draw_footer:
         ldx #24
         jsr row_addr_sp
         ldy #0
+
 vdf_loop:
 
         lda view_footer_base,y
@@ -4450,9 +4784,11 @@ vdf_loop:
         lda view_footer_base,y
         ora view_char_offset
         jmp vdf_store
+
 vdf_plain:
 
         lda view_footer_base,y
+
 vdf_store:
 
         sta (sp_lo),y
@@ -4471,90 +4807,110 @@ view_draw_header:
 
         ldx #0
         jsr row_addr_sp
+
         ; Left border
+
         ldy #0
         lda #HB_RLEFT
         sta (sp_lo),y
+
         ; Right border
+
         ldy #39
         lda #HB_LEFT
         sta (sp_lo),y
+
         ; Fill cols 1-38 with reversed space ($A0)
+
         ldy #1
         lda #$A0
+
 vdh_fill:
 
         sta (sp_lo),y
         iny
         cpy #39
         bne vdh_fill
+
         ; Write "VIEW" at cols 3-6 (reversed screen codes)
         ; Label letters get view_char_offset so they stay uppercase in LOWER
+
         ldy #3
-        lda #$96               ; 'V' reversed
+        lda #$96                ; 'V' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$89               ; 'I' reversed
+        lda #$89                ; 'I' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$85               ; 'E' reversed
+        lda #$85                ; 'E' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$97               ; 'W' reversed
+        lda #$97                ; 'W' reversed
         ora view_char_offset
         sta (sp_lo),y
+
         ; Write filename at cols 9.. (reversed)
+
         ldy #9
         ldx #0
+
 vdh_fn:
 
         cpx view_fname_len
         bcs vdh_mode
         lda view_fname,x
         jsr petscii_to_screen
-        ora #$80               ; reverse
+        ora #$80                ; reverse
         sta (sp_lo),y
         iny
         inx
         jmp vdh_fn
+
 vdh_mode:
+
         ; Write mode right-aligned ending at col 35
         ; TEXT = 4 chars -> cols 32-35; HEX = 3 chars -> cols 33-35
+
         lda view_mode
         bne vdh_hex
+
         ; Text mode: "TEXT" reversed at cols 32-35
+
         ldy #32
-        lda #$94               ; 'T' reversed
+        lda #$94                ; 'T' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$85               ; 'E' reversed
+        lda #$85                ; 'E' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$98               ; 'X' reversed
+        lda #$98                ; 'X' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$94               ; 'T' reversed
+        lda #$94                ; 'T' reversed
         ora view_char_offset
         sta (sp_lo),y
         rts
+
 vdh_hex:
+
         ; Hex mode: "HEX" reversed at cols 33-35
+
         ldy #33
-        lda #$88               ; 'H' reversed
+        lda #$88                ; 'H' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$85               ; 'E' reversed
+        lda #$85                ; 'E' reversed
         ora view_char_offset
         sta (sp_lo),y
         iny
-        lda #$98               ; 'X' reversed
+        lda #$98                ; 'X' reversed
         ora view_char_offset
         sta (sp_lo),y
         rts
@@ -4568,6 +4924,7 @@ vdh_hex:
 view_draw_frame:
 
         ; --- Top border (row 1) ---
+
         ldx #1
         jsr row_addr_sp
         ldy #0
@@ -4576,16 +4933,21 @@ view_draw_frame:
         ldy #39
         lda #BOX_TR
         sta (sp_lo),y
+
         ; Fill horizontal line cols 1-38
+
         ldy #1
         lda #BOX_H
+
 vdf_top_fill:
 
         sta (sp_lo),y
         iny
         cpy #39
         bne vdf_top_fill
+
         ; Hex mode: place T-junctions on top border
+
         lda view_mode
         beq vdf_top_done
         ldy #5
@@ -4598,8 +4960,11 @@ vdf_top_fill:
         ldy #34
         lda #BOX_TJU
         sta (sp_lo),y
+
 vdf_top_done:
+
         ; --- Bottom border (row 23) ---
+
         ldx #23
         jsr row_addr_sp
         ldy #0
@@ -4610,6 +4975,7 @@ vdf_top_done:
         sta (sp_lo),y
         ldy #1
         lda #BOX_H
+
 vdf_bot_fill:
 
         sta (sp_lo),y
@@ -4627,9 +4993,13 @@ vdf_bot_fill:
         sta (sp_lo),y
         ldy #34
         sta (sp_lo),y
+
 vdf_bot_done:
+
         ; --- Side borders and dividers (rows 2-22) ---
+
         ldx #2
+
 vdf_sides:
 
         stx vdf_row
@@ -4639,7 +5009,9 @@ vdf_sides:
         sta (sp_lo),y
         ldy #39
         sta (sp_lo),y
+
         ; Hex mode: internal dividers at cols 5, 17, 29, 34
+
         lda view_mode
         beq vdf_sides_next
         ldy #5
@@ -4651,6 +5023,7 @@ vdf_sides:
         sta (sp_lo),y
         ldy #34
         sta (sp_lo),y
+
 vdf_sides_next:
 
         ldx vdf_row
@@ -4669,6 +5042,7 @@ vdf_row:         byte 0
 view_render_text:
 
         ; dp = view_chunk + (view_top - view_chunk_base)
+
         sec
         lda view_top
         sbc view_chunk_base
@@ -4688,44 +5062,54 @@ view_render_text:
         lda vr_off+1
         sta vr_bufcur+1
         ldx #2
+
 vrt_row:
 
         stx vr_rownum
         jsr row_addr_sp
         jsr view_calc_valid
         sta vr_valid
+
         ; Write data at cols 1..38
         ; Y indexes data in chunk buffer, vr_col tracks screen column
+
         lda #1
         sta vr_col
         ldy #0
+
 vrt_data_loop:
 
         cpy vr_valid
         bcs vrt_pad
-        sty vr_ytmp           ; save data index
+        sty vr_ytmp             ; save data index
         lda view_charset_mode
-        bne vrt_ascii         ; ASCII render: translate
+        bne vrt_ascii           ; ASCII render: translate
+
         ; SCREEN render: store raw byte as screen code (no conversion)
+
         lda (dp_lo),y
         jmp vrt_data_store
+
 vrt_ascii:
 
         lda (dp_lo),y
         jsr ascii_to_screen
+
 vrt_data_store:
 
         ldy vr_col
         sta (sp_lo),y
         inc vr_col
-        ldy vr_ytmp           ; restore data index
+        ldy vr_ytmp             ; restore data index
         iny
         cpy #VIEW_TEXT_COLS
         bcc vrt_data_loop
+
 vrt_pad:
 
         lda #SC_SPACE
         ldy vr_col
+
 vrt_pad_loop:
 
         cpy #39
@@ -4733,6 +5117,7 @@ vrt_pad_loop:
         sta (sp_lo),y
         iny
         jmp vrt_pad_loop
+
 vrt_row_done:
 
         lda dp_lo
@@ -4790,22 +5175,30 @@ view_render_hex:
         lda view_top+1
         sta vr_fileoff+1
         ldx #2
+
 vrh_row:
 
         stx vr_rownum
         jsr row_addr_sp
+
         ; --- Address (4 hex digits at cols 1-4) ---
+
         ldy #1
         lda vr_fileoff+1
         jsr write_hex_byte
         lda vr_fileoff
         jsr write_hex_byte
+
         ; --- Valid bytes in this row ---
+
         jsr view_calc_valid
         sta vr_valid
+
         ; --- Hex group 1 (cols 6-16): 4 bytes as HH HH HH HH ---
+
         ldy #6
         ldx #0
+
 vrh_hex1_loop:
 
         cpx #0
@@ -4813,6 +5206,7 @@ vrh_hex1_loop:
         lda #SC_SPACE
         sta (sp_lo),y
         iny
+
 vrh_hex1_first:
 
         cpx vr_valid
@@ -4824,6 +5218,7 @@ vrh_hex1_first:
         ldy vr_ytmp
         jsr write_hex_byte
         jmp vrh_hex1_next
+
 vrh_hex1_pad:
 
         lda #SC_SPACE
@@ -4831,14 +5226,18 @@ vrh_hex1_pad:
         iny
         sta (sp_lo),y
         iny
+
 vrh_hex1_next:
 
         inx
         cpx #4
         bne vrh_hex1_loop
+
         ; --- Hex group 2 (cols 18-28): 4 bytes as HH HH HH HH ---
+
         ldy #18
         ldx #0
+
 vrh_hex2_loop:
 
         cpx #0
@@ -4846,6 +5245,7 @@ vrh_hex2_loop:
         lda #SC_SPACE
         sta (sp_lo),y
         iny
+
 vrh_hex2_first:
 
         cpx vr_valid
@@ -4857,6 +5257,7 @@ vrh_hex2_first:
         ldy vr_ytmp
         jsr write_hex_byte
         jmp vrh_hex2_next
+
 vrh_hex2_pad:
 
         lda #SC_SPACE
@@ -4864,14 +5265,18 @@ vrh_hex2_pad:
         iny
         sta (sp_lo),y
         iny
+
 vrh_hex2_next:
 
         inx
         cpx #4
         bne vrh_hex2_loop
+
         ; --- ASCII group 1 (cols 30-33): 4 raw bytes as screen codes ---
+
         ldy #30
         ldx #0
+
 vrh_ascii1_loop:
 
         cpx vr_valid
@@ -4881,21 +5286,26 @@ vrh_ascii1_loop:
         tay
         lda (dp_lo),y
         ldy vr_ytmp
-        sta (sp_lo),y          ; raw screen code, no conversion
+        sta (sp_lo),y           ; raw screen code, no conversion
         jmp vrh_ascii1_next
+
 vrh_ascii1_pad:
 
         lda #SC_SPACE
         sta (sp_lo),y
+
 vrh_ascii1_next:
 
         iny
         inx
         cpx #4
         bne vrh_ascii1_loop
+
         ; --- ASCII group 2 (cols 35-38): 4 raw bytes as screen codes ---
+
         ldy #35
         ldx #0
+
 vrh_ascii2_loop:
 
         cpx vr_valid
@@ -4905,19 +5315,23 @@ vrh_ascii2_loop:
         tay
         lda (dp_lo),y
         ldy vr_ytmp
-        sta (sp_lo),y          ; raw screen code, no conversion
+        sta (sp_lo),y           ; raw screen code, no conversion
         jmp vrh_ascii2_next
+
 vrh_ascii2_pad:
 
         lda #SC_SPACE
         sta (sp_lo),y
+
 vrh_ascii2_next:
 
         iny
         inx
         cpx #4
         bne vrh_ascii2_loop
+
         ; --- Advance for next row ---
+
         lda dp_lo
         clc
         adc #VIEW_HEX_COLS
@@ -4944,6 +5358,7 @@ vrh_ascii2_next:
         cpx #(2+VIEW_ROWS)
         beq vrh_done
         jmp vrh_row
+
 vrh_done:
 
         rts
@@ -4955,6 +5370,7 @@ vrh_done:
 view_loop:
 
         jsr view_render
+
 vl_wait:
 
         jsr GETIN
@@ -4986,60 +5402,72 @@ vl_wait:
         cmp #K_STOP
         beq vl_quit
         jmp vl_wait
+
 vl_hex:
 
         lda #1
         sta view_mode
         jsr view_set_mode_params
         jmp view_loop
+
 vl_text:
 
         lda #0
         sta view_mode
         jsr view_set_mode_params
         jmp view_loop
+
 vl_ascii:
 
         lda #1
         sta view_charset_mode
         jmp view_loop
+
 vl_screen:
 
         lda #0
         sta view_charset_mode
         jmp view_loop
+
 vl_lower:
 
         lda #1
         sta view_charset
         jsr view_set_pcr_charset
         jmp view_loop
+
 vl_upper:
 
         lda #0
         sta view_charset
         jsr view_set_pcr_charset
         jmp view_loop
+
 vl_up:
 
         jsr view_scroll_up
         jmp view_loop
+
 vl_down:
 
         jsr view_scroll_down
         jmp view_loop
+
 vl_pgup:
 
         jsr view_page_up
         jmp view_loop
+
 vl_pgdn:
 
         jsr view_page_down
         jmp view_loop
+
 vl_home:
 
         jsr view_home
         jmp view_loop
+
 vl_quit:
 
         rts
@@ -5057,7 +5485,9 @@ view_scroll_down:
         lda view_top+1
         adc #0
         sta view_top+1
+
         ; Check if view_top + screen_size > chunk_base + chunk_len
+
         clc
         lda view_top
         adc view_screen_size
@@ -5081,10 +5511,12 @@ view_scroll_down:
         bcc vsd_done
         lda view_at_eof
         bne vsd_clamp
+
 vsd_need_reload:
 
         jsr view_reload_at_top
         rts
+
 vsd_clamp:
 
         sec
@@ -5094,6 +5526,7 @@ vsd_clamp:
         lda view_top+1
         sbc #0
         sta view_top+1
+
 vsd_done:
 
         rts
@@ -5122,9 +5555,11 @@ view_scroll_up:
         cmp view_chunk_base
         bcc vsu_reload
         rts
+
 vsu_reload:
 
         jsr view_reload_at_top
+
 vsu_done:
 
         rts
@@ -5171,7 +5606,9 @@ view_page_down:
         lda view_top+1
         adc view_page_size+1
         sta view_top+1
+
         ; Check if view_top + screen_size > chunk_base + chunk_len
+
         clc
         lda view_top
         adc view_screen_size
@@ -5195,10 +5632,12 @@ view_page_down:
         bcc vpd_done
         lda view_at_eof
         bne vpd_clamp
+
 vpd_need_reload:
 
         jsr view_reload_at_top
         rts
+
 vpd_clamp:
 
         sec
@@ -5208,6 +5647,7 @@ vpd_clamp:
         lda view_top+1
         sbc #0
         sta view_top+1
+
 vpd_done:
 
         rts
@@ -5229,11 +5669,15 @@ view_page_up:
         sbc view_page_size+1
         sta view_top+1
         bcs vpu_check
+
         ; Underflow: clamp to 0
+
         lda #0
         sta view_top
         sta view_top+1
+
 vpu_check:
+
         lda view_top+1
         cmp view_chunk_base+1
         bcc vpu_reload
@@ -5242,9 +5686,11 @@ vpu_check:
         cmp view_chunk_base
         bcc vpu_reload
         rts
+
 vpu_reload:
 
         jsr view_reload_at_top
+
 vpu_done:
 
         rts
@@ -5253,25 +5699,26 @@ vpu_done:
 ; Viewer state and buffers
 ; =========================================================
 
-view_mode:       byte 0          ; 0=text, 1=hex (persisted across opens)
-view_charset_mode: byte 0        ; 0=SCREEN (raw), 1=ASCII (translate) (persisted)
-view_charset:    byte 0          ; 0=UPPER, 1=LOWER (persisted)
-view_char_offset: byte 0         ; $00 UPPER, $40 LOWER; ORed into label letters
-saved_pcr_cs:    byte 0          ; PCR bits 3:1 saved on viewer entry
-view_pcr_pending: byte 0         ; nonzero = a PCR charset write is staged
-view_pending_pcr_cs: byte 0      ; staged PCR bits 3:1 to OR into PCR on flush
-view_top:        word 0          ; byte offset of visible top
-view_chunk_base: word 0          ; byte offset of chunk start
-view_chunk_len:  word 0          ; bytes loaded in chunk
-view_at_eof:     byte 0          ; nonzero if last read hit EOF
-view_row_size:   byte 0          ; bytes per row (38 or 8)
-view_screen_size: word 0         ; bytes per screen (798 or 168)
-view_page_size:  word 0          ; bytes per page (760 text, 168 hex)
-view_fname:      ds 16, 0        ; filename being viewed
+view_mode:       byte 0                 ; 0=text, 1=hex (persisted across opens)
+view_charset_mode: byte 0               ; 0=SCREEN (raw), 1=ASCII (translate) (persisted)
+view_charset:    byte 0                 ; 0=UPPER, 1=LOWER (persisted)
+view_char_offset: byte 0                ; $00 UPPER, $40 LOWER; ORed into label letters
+saved_pcr_cs:    byte 0                 ; PCR bits 3:1 saved on viewer entry
+view_pcr_pending: byte 0                ; nonzero = a PCR charset write is staged
+view_pending_pcr_cs: byte 0             ; staged PCR bits 3:1 to OR into PCR on flush
+view_top:        word 0                 ; byte offset of visible top
+view_chunk_base: word 0                 ; byte offset of chunk start
+view_chunk_len:  word 0                 ; bytes loaded in chunk
+view_at_eof:     byte 0                 ; nonzero if last read hit EOF
+view_row_size:   byte 0                 ; bytes per row (38 or 8)
+view_screen_size: word 0                ; bytes per screen (798 or 168)
+view_page_size:  word 0                 ; bytes per page (760 text, 168 hex)
+view_fname:      ds 16, 0               ; filename being viewed
 view_fname_len:  byte 0
-view_chunk:      ds VIEW_CHUNK, 0 ; chunk buffer
+view_chunk:      ds VIEW_CHUNK, 0       ; chunk buffer
 
 ; Viewer temporaries
+
 vr_off:          word 0
 vr_bufcur:       word 0
 vr_valid:        byte 0
@@ -5298,29 +5745,31 @@ whb_tmp:         byte 0
 ; (base & $7F in $01-$1A) so labels stay uppercase in LOWER.
 ; $E1=HB_RLEFT border, $61=HB_LEFT border.
 ; Layout: T(ext) H(ex) A(scii) S(creen) L(ower) U(pper) E(xit)
+
 view_footer_base:
-        byte $E1                       ; col 0: left border
-        byte $14                       ; col 1: 'T' normal
-        byte $85,$98,$94               ; cols 2-4: 'EXT' reversed
-        byte $A0                       ; col 5: reversed space
-        byte $08                       ; col 6: 'H' normal
-        byte $85,$98                   ; cols 7-8: 'EX' reversed
-        byte $A0                       ; col 9: reversed space
-        byte $01                       ; col 10: 'A' normal
-        byte $93,$83,$89,$89           ; cols 11-14: 'SCII' reversed
-        byte $A0                       ; col 15: reversed space
-        byte $13                       ; col 16: 'S' normal
-        byte $83,$92,$85,$85,$8E       ; cols 17-21: 'CREEN' reversed
-        byte $A0                       ; col 22: reversed space
-        byte $0C                       ; col 23: 'L' normal
-        byte $8F,$97,$85,$92           ; cols 24-27: 'OWER' reversed
-        byte $A0                       ; col 28: reversed space
-        byte $15                       ; col 29: 'U' normal
-        byte $90,$90,$85,$92           ; cols 30-33: 'PPER' reversed
-        byte $A0                       ; col 34: reversed space
-        byte $05                       ; col 35: 'E' normal
-        byte $98,$89,$94               ; cols 36-38: 'XIT' reversed
-        byte $61                       ; col 39: right border
+
+        byte $E1                        ; col 0: left border
+        byte $14                        ; col 1: 'T' normal
+        byte $85,$98,$94                ; cols 2-4: 'EXT' reversed
+        byte $A0                        ; col 5: reversed space
+        byte $08                        ; col 6: 'H' normal
+        byte $85,$98                    ; cols 7-8: 'EX' reversed
+        byte $A0                        ; col 9: reversed space
+        byte $01                        ; col 10: 'A' normal
+        byte $93,$83,$89,$89            ; cols 11-14: 'SCII' reversed
+        byte $A0                        ; col 15: reversed space
+        byte $13                        ; col 16: 'S' normal
+        byte $83,$92,$85,$85,$8E        ; cols 17-21: 'CREEN' reversed
+        byte $A0                        ; col 22: reversed space
+        byte $0C                        ; col 23: 'L' normal
+        byte $8F,$97,$85,$92            ; cols 24-27: 'OWER' reversed
+        byte $A0                        ; col 28: reversed space
+        byte $15                        ; col 29: 'U' normal
+        byte $90,$90,$85,$92            ; cols 30-33: 'PPER' reversed
+        byte $A0                        ; col 34: reversed space
+        byte $05                        ; col 35: 'E' normal
+        byte $98,$89,$94                ; cols 36-38: 'XIT' reversed
+        byte $61                        ; col 39: right border
 msg_view_err:      byte "VIEW OPEN FAILED",0
 
 ; =========================================================
@@ -5336,3 +5785,4 @@ cmd_len:        byte 0
 
 entries_p0:     ds MAX_ENTRY*ENT_SIZE, 0
 entries_p1:     ds MAX_ENTRY*ENT_SIZE, 0
+
