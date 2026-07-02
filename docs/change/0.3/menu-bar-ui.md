@@ -12,7 +12,7 @@ Redesign the main screen to replace the title bar and help bar with a menu bar (
 
 The main screen is redesigned to a 40-column, 25-row layout:
 
-- **Row 0 -- Menu bar**: Reverse-video bar with half-block borders (`$E1` left, `$61` right). Shows the menu titles `FILE`, `DISK`, and `-` (Help) in reversed screen codes, separated by reversed spaces. The active menu title (when a dropdown is open) is rendered in normal video. The rest of the bar is reversed space (`$A0`).
+- **Row 0 -- Menu bar**: Reverse-video bar with half-block borders (`$E1` left, `$61` right). Shows the menu titles `FILE`, `DISK`, and `HELP` in reversed screen codes, separated by reversed spaces. The active menu title area (when a dropdown is open) is rendered in normal video, including one space on each side of the title text. The rest of the bar is reversed space (`$A0`).
 - **Row 1 -- Panel top border**: Center-line box drawing. Left panel: `$70` (TL), `$40` (H) across cols 1-18, `$6E` (TR) at col 19. Right panel: `$70` (TL) at col 20, `$40` (H) across cols 21-38, `$6E` (TR) at col 39. Col 0 is the left edge of the menu bar's half-block border延续 -- no, col 0 is `$70` for the left panel. The two panels share a double vertical border at cols 19-20 (`$6E` + `$70` or a T-junction pattern).
 - **Rows 2-22 -- Panel content**: Left panel cols 0-19, right panel cols 20-39. Each panel has vertical borders (`$5D`) at its outer edges and the center divider. Row 2 is the panel header (drive number + disk title, reversed). Rows 3-22 are the 20 directory entry rows.
 - **Row 23 -- Panel bottom border**: Mirrors row 1 with `$6D` (BL) and `$7D` (BR) corners.
@@ -26,7 +26,9 @@ The menu bar shows three titles:
 |--------|------------------------------------------|--------------|
 | `FILE` | cols 3-6                                 | `F`          |
 | `DISK` | cols 9-12                                | `D`          |
-| `-`    | col 35 (Help, shown as a dash)           | `H`          |
+| `HELP` | cols 33-36                               | `H`          |
+
+The active menu title area (when a dropdown is open) is rendered in normal video and includes one space on each side of the title text, so the highlighted area is 6 columns wide. The inactive titles are reversed against the reversed bar.
 
 Wait -- the PET has no F-key row. The shortcut keys are the letter keys: pressing `F` while the menu is open activates the File menu, `D` activates Disk, `H` activates Help. When no menu is open, these letters have their existing panel-level bindings (but see Key Bindings below for conflicts).
 
@@ -35,6 +37,18 @@ Wait -- the PET has no F-key row. The shortcut keys are the letter keys: pressin
 When `M` or RVS OFF (`$92`) is pressed, the menu bar activates. The first menu (File) is selected by default. Left/right cursor keys switch between File, Disk, and Help. Up/down cursor keys move the selection within the open dropdown. RETURN activates the selected item. `M` or RVS OFF or RUN/STOP closes the menu and returns to panel navigation.
 
 Each dropdown overlays the panel content below its menu title. The dropdown is a bordered box using center-line drawing characters, with the top border replaced by the menu bar row (the dropdown appears to drop from the menu bar).
+
+Layout rules:
+
+- The dropdown is always 12 columns wide.
+- Its left edge is `title_col - 2`, clamped so the right edge never exceeds column 38.
+- The total height is `item_count + 3` rows:
+  - row 1: top T-junction connectors (clearing the interior to spaces),
+  - rows 2..count+1: menu items,
+  - row count+2: empty interior row,
+  - row count+3: bottom border.
+- Each item line shows the label left-justified (starting at the first interior column) and the shortcut key right-justified (at the 8th interior column).
+- The selected item is highlighted with a reversed-video bar. The bar is framed by a reversed left half-block (`$E1`) on the left and a normal left half-block (`$61`) on the right; at the dropdown borders the vertical line becomes a T-junction (`$73` / `$6B`) for that row.
 
 #### File Menu
 
@@ -59,11 +73,11 @@ Items (2), dropping from col 9:
 | Item    | Shortcut | Action                              |
 |---------|----------|-------------------------------------|
 | CHANGE  | C        | Open the change-drive window.       |
-| REFRESH | R        | Re-load the active panel (existing do_reload). |
+| RELOAD  | R        | Re-load the active panel (existing do_reload). |
 
 #### Help Menu
 
-Items (1), dropping from col 35:
+Items (1), dropping from col 33:
 
 | Item    | Shortcut | Action                              |
 |---------|----------|-------------------------------------|
@@ -84,9 +98,13 @@ A modal window showing detailed information about the selected file:
 
 A modal window showing program information:
 
-- Window title: `ABOUT`
-- Fields: program name (`PET COMMANDER`), version (`0.3`), target machine (`COMMODORE PET 3032`), and a one-line description.
-- Window is bordered, centered, approximately 30 columns x 8 rows.
+- Bordered window, 30 columns x 15 rows, centered at cols 5-34 and rows 5-19.
+- Two inner vertical half-block bars (`$60`) at cols 8 and 31 create a framed content area.
+- Content:
+  - `PET COMMANDER` centered near the top.
+  - A 6-character half-block underline below the program name.
+  - `VERSION: 0.3` centered below the underline.
+  - An `OK` button in a reversed half-block box at the bottom.
 - Any key closes the window.
 
 #### Change Drive Window (CHANGE)

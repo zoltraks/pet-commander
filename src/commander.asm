@@ -770,7 +770,7 @@ dma_disk:
         cpx #0
         beq dma_change
         cpx #1
-        beq dma_refresh
+        beq dma_reload
         rts
 
 dma_change:
@@ -778,7 +778,7 @@ dma_change:
         jsr do_menu_close
         jmp op_change
 
-dma_refresh:
+dma_reload:
 
         jsr do_menu_close
         jmp do_reload
@@ -798,12 +798,20 @@ dma_about:
 ; =========================================================
 ; draw_dropdown: draw the current menu's dropdown box
 ; The dropdown drops from the menu bar (row 0) into the panel area.
-; No top border (the menu bar serves as the top).
+; Width is 12 columns; left edge is title_col-2, clamped so the
+; right edge never exceeds column 38.
+; Height = item_count + 3 rows:
+;   row 1          : top T-junction connectors
+;   rows 2..count+1: menu items
+;   row count+2    : empty interior row
+;   row count+3    : bottom border
+; Selected item is highlighted with reversed video and a half-block
+; left edge ($E1) and right edge ($61).
 ; =========================================================
 
 draw_dropdown:
 
-        ; Get the dropdown's left column and item count
+        ; Get the dropdown's title column and item count
 
         ldx menu_idx
         lda menu_col,x
@@ -811,202 +819,292 @@ draw_dropdown:
         lda menu_item_count,x
         sta dd_count
 
-        ; Draw side borders and items for rows 1..(count+1)
+        ; Compute left edge = title_col - 2, right edge = left + 11
+        ; Clamp right edge to 38 so the box stays on screen.
+
+        lda dd_col
+        sec
+        sbc #2
+        sta dd_left
+        clc
+        adc #11
+        cmp #39
+        bcc dd_store_right
+        lda #38
+
+dd_store_right:
+
+        sta dd_right
+
+        ; Draw top edge connectors at row 1 and clear the interior
+
+        ldx #1
+        jsr row_addr_sp
+        ldy dd_left
+        lda #BOX_TLEFT
+        sta (sp_lo),y
+        ldy dd_right
+        lda #BOX_TRIGHT
+        sta (sp_lo),y
+        jsr draw_dropdown_clear_interior
+
+        ; Total rows = count + 3; row index starts at 2 (first item)
 
         lda dd_count
         clc
-        adc #1
-        sta dd_rows             ; rows = count + 1 (includes bottom border)
-
-        ; Draw each row
-
-        ldx #1                  ; start at row 1
+        adc #3
+        sta dd_rows
+        ldx #2
 
 dd_row_loop:
 
         stx dd_row
-        jsr row_addr_sp         ; sp = BUFFER + row * 40
-
-        ; Left border
-
-        ldy dd_col
-        lda #BOX_V
-        sta (sp_lo),y
-
-        ; Right border
-
-        lda dd_col
-        clc
-        adc #DROP_COLS-1
-        tay
-        lda #BOX_V
-        sta (sp_lo),y
-
-        ; Is this the bottom border row?
-
         txa
-        cmp dd_rows
-        bne dd_item_row
+        sec
+        sbc #2
+        sta dd_item_idx
 
-        ; Bottom border: BL corner, H line, BR corner
+        ; Classify the row: item, empty interior, or bottom border
 
-        ldy dd_col
-        lda #BOX_BL
-        sta (sp_lo),y
-        lda dd_col
-        clc
-        adc #DROP_COLS-1
-        tay
-        lda #BOX_BR
-        sta (sp_lo),y
-
-        ; Horizontal line between corners
-
-        lda dd_col
-        clc
-        adc #1
-        tay
-        lda #BOX_H
-
-dd_bot_fill:
-
-        sta (sp_lo),y
-        iny
-        cpy dd_col
-        bcc dd_bot_done         ; wrapped past 39
-        sbc #1                  ; undo the iny effect on comparison... no
-
-        ; Better: compare with right border col
-
-        lda dd_col
-        clc
-        adc #DROP_COLS-1
-        sta dd_tmp
-        lda #BOX_H
-        ldy dd_col
-        iny
-
-dd_bot_fill2:
-
-        sta (sp_lo),y
-        iny
-        cpy dd_tmp
-        bne dd_bot_fill2
-
-dd_bot_done:
-
-        jmp dd_next_row
+        ldx dd_item_idx
+        cpx dd_count
+        bcc dd_item_row         ; 0 <= item_idx < count  -> item
+        beq dd_empty_row        ; item_idx == count      -> empty row
+        jmp dd_bottom_row       ; item_idx > count       -> bottom border
 
 dd_item_row:
 
-        ; Draw the item text at this row
-        ; Item index = row - 1
+        jsr draw_dropdown_row
+        jmp dd_next_row
 
-        txa
-        sec
-        sbc #1
-        sta dd_item_idx
+dd_empty_row:
 
-        ; Get the item label from the menu's item table
+        jsr draw_dropdown_sides
+        jmp dd_next_row
 
-        jsr dd_get_item_label
+dd_bottom_row:
 
-        ; Write label into the dropdown interior (cols dd_col+1 .. dd_col+DROP_COLS-2)
-
-        lda dd_col
-        clc
-        adc #1
-        sta dd_write_col
-        ldy #0
-
-dd_label_loop:
-
-        cpy #DROP_WIDTH
-        bcs dd_label_done
-        lda dd_label_buf,y
-        beq dd_label_sp
-        jsr petscii_to_screen
-        jmp dd_label_store
-
-dd_label_sp:
-
-        lda #SC_SPACE
-
-dd_label_store:
-
-        ; Check if this item is selected (reverse video)
-
-        ldx dd_item_idx
-        cpx menu_sel
-        bne dd_label_rev
-
-        ; Selected: normal video (bar is already reversed? No, bar is space)
-        ; Actually: selected item = reversed, unselected = normal
-
-        jmp dd_label_write
-
-dd_label_rev:
-
-        ; unselected: normal video
-
-        jmp dd_label_write
-
-dd_label_write:
-
-        ldy dd_write_col
-        sta (sp_lo),y
-        inc dd_write_col
-        iny                     ; y is index into label buf
-        jmp dd_label_loop
-
-dd_label_done:
-
-        ; If this is the selected item, reverse the entire item row
-
-        ldx dd_item_idx
-        cpx menu_sel
-        bne dd_next_row
-
-        ; Reverse the interior cols
-
-        lda dd_col
-        clc
-        adc #1
-        tay
-
-dd_rev_loop:
-
-        cpy dd_col
-        bcc dd_rev_done
-        lda dd_col
-        clc
-        adc #DROP_COLS-1
-        sta dd_tmp
-        ldy dd_col
-        iny
-
-dd_rev_loop2:
-
-        lda (sp_lo),y
-        ora #$80
-        sta (sp_lo),y
-        iny
-        cpy dd_tmp
-        bne dd_rev_loop2
-
-dd_rev_done:
+        jsr draw_dropdown_bottom
+        jmp dd_next_row
 
 dd_next_row:
 
         ldx dd_row
         inx
         cpx dd_rows
-        bcc dd_row_loop_jmp
+        bcc dd_row_loop
         rts
 
-dd_row_loop_jmp:
+; draw_dropdown_sides: clear interior and draw vertical borders for the current row.
 
-        jmp dd_row_loop
+draw_dropdown_sides:
+
+        ldx dd_row
+        jsr row_addr_sp
+        jsr draw_dropdown_clear_interior
+        ldy dd_left
+        lda #BOX_V
+        sta (sp_lo),y
+        ldy dd_right
+        lda #BOX_V
+        sta (sp_lo),y
+        rts
+
+; draw_dropdown_bottom: draw bottom border for the current row.
+
+draw_dropdown_bottom:
+
+        ldx dd_row
+        jsr row_addr_sp
+        ldy dd_left
+        lda #BOX_BL
+        sta (sp_lo),y
+        ldy dd_right
+        lda #BOX_BR
+        sta (sp_lo),y
+        ldy dd_left
+        iny
+
+        ; Horizontal line between the corners
+
+        lda #BOX_H
+
+dd_bot_fill:
+
+        sta (sp_lo),y
+        iny
+        cpy dd_right
+        bne dd_bot_fill
+        rts
+
+; draw_dropdown_clear_interior: fill cols dd_left+1 .. dd_right-1 with spaces.
+
+draw_dropdown_clear_interior:
+
+        ldy dd_left
+        iny
+        lda #SC_SPACE
+
+ddci_loop:
+
+        sta (sp_lo),y
+        iny
+        cpy dd_right
+        bne ddci_loop
+        rts
+
+; draw_dropdown_row: draw one item row (dd_item_idx) with side borders,
+; left-aligned label, right-aligned shortcut, and selected highlight.
+
+DRAW_INNER = 10
+
+draw_dropdown_row:
+
+        ; Load label and shortcut for this item before touching the screen pointer
+
+        jsr dd_get_item_label
+        jsr dd_get_item_shortcut
+
+        ; Set selected flag
+
+        lda #0
+        sta dd_sel_flag
+        ldx dd_item_idx
+        cpx menu_sel
+        bne ddr_set_row
+        lda #$ff
+        sta dd_sel_flag
+
+        ; Set screen pointer for this row
+
+ddr_set_row:
+
+        ldx dd_row
+        jsr row_addr_sp
+
+        ; Clear interior and draw side borders.
+        ; For the selected item, use T-junctions (BOX_TLEFT/BOX_TRIGHT)
+        ; because the highlight bar connects horizontally to the border.
+
+        jsr draw_dropdown_clear_interior
+        ldy dd_left
+        lda #BOX_V
+        ldx dd_sel_flag
+        beq ddr_left_border
+        lda #BOX_TLEFT
+
+ddr_left_border:
+
+        sta (sp_lo),y
+        ldy dd_right
+        lda #BOX_V
+        ldx dd_sel_flag
+        beq ddr_right_border
+        lda #BOX_TRIGHT
+
+ddr_right_border:
+
+        sta (sp_lo),y
+
+        ; Draw interior offsets 0..9 (col = dd_left + 1 + offset)
+
+ddr_start:
+
+        ldy #0
+        sty ddr_off
+
+ddr_loop:
+
+        ; Compute screen column
+
+        lda dd_left
+        clc
+        adc ddr_off
+        adc #1
+        tay
+
+        ; Determine what to draw at this interior offset
+
+        ldx ddr_off
+        cpx #0
+        beq ddr_offset0
+        cpx #9
+        beq ddr_offset9
+        cpx #8
+        beq ddr_offset8
+        cpx #7
+        beq ddr_offset7
+        ; offsets 1-6: label chars (padded with spaces, converted to screen code)
+        txa
+        sec
+        sbc #1
+        tax
+        lda dd_label_buf,x
+        beq ddr_label_sp
+        jsr petscii_to_screen
+        jmp ddr_char
+
+ddr_label_sp:
+
+        lda #SC_SPACE
+        jmp ddr_char
+
+ddr_offset7:
+
+        lda #SC_SPACE
+        jmp ddr_char
+
+ddr_offset8:
+
+        lda dd_shortcut
+        jsr petscii_to_screen
+        jmp ddr_char
+
+ddr_offset0:
+
+        lda dd_sel_flag
+        beq ddr_sp0
+        lda #HB_RLEFT           ; $E1 reversed left half-block
+        jmp ddr_char
+
+ddr_sp0:
+
+        lda #SC_SPACE
+        jmp ddr_char
+
+ddr_offset9:
+
+        lda dd_sel_flag
+        beq ddr_sp9
+        lda #HB_LEFT            ; $61 left half-block
+        jmp ddr_char
+
+ddr_sp9:
+
+        lda #SC_SPACE
+
+        ; Reverse content offsets (1-8) when selected
+
+ddr_char:
+
+        ldx dd_sel_flag
+        beq ddr_store
+        ldx ddr_off
+        cpx #0
+        beq ddr_store
+        cpx #9
+        beq ddr_store
+        ora #$80
+
+ddr_store:
+
+        sta (sp_lo),y
+
+        inc ddr_off
+        lda ddr_off
+        cmp #DRAW_INNER
+        bne ddr_loop
+        rts
 
 ; dd_get_item_label: get the label for menu_idx/dd_item_idx into dd_label_buf
 
@@ -1086,9 +1184,38 @@ dd_gil_done:
 
         rts
 
+; dd_get_item_shortcut: load the PETSCII shortcut for
+; menu_idx/dd_item_idx into dd_shortcut.
+
+dd_get_item_shortcut:
+
+        lda menu_idx
+        cmp #MENU_FILE
+        bne dd_gis_disk
+        ldx dd_item_idx
+        lda menu_file_shortcuts,x
+        sta dd_shortcut
+        rts
+
+dd_gis_disk:
+
+        cmp #MENU_DISK
+        bne dd_gis_help
+        ldx dd_item_idx
+        lda menu_disk_shortcuts,x
+        sta dd_shortcut
+        rts
+
+dd_gis_help:
+
+        ldx dd_item_idx
+        lda menu_help_shortcuts,x
+        sta dd_shortcut
+        rts
+
 ; Menu data tables
 
-menu_col:       byte 3, 9, 35   ; column positions for File, Disk, Help titles
+menu_col:       byte 3, 9, 33   ; column positions for File, Disk, Help titles
 
 menu_item_count: byte 7, 2, 1   ; number of items per menu
 
@@ -1100,7 +1227,7 @@ menu_file_labels:
 
 menu_disk_labels:
 
-        word mdl_change, mdl_refresh
+        word mdl_change, mdl_reload
 
 menu_help_labels:
 
@@ -1115,19 +1242,28 @@ mfl_find:       byte "FIND", 0
 mfl_quit:       byte "QUIT", 0
 
 mdl_change:     byte "CHANGE", 0
-mdl_refresh:    byte "REFRESH", 0
+mdl_reload:     byte "RELOAD", 0
 
 mhl_about:      byte "ABOUT", 0
 
+; Menu shortcuts (PETSCII, converted to screen code when drawn)
+
+menu_file_shortcuts:    byte $56, $43, $4E, $44, $49, $46, $51
+menu_disk_shortcuts:    byte $43, $52
+menu_help_shortcuts:    byte $41
+
 ; Dropdown temporaries
 
-dd_col:         byte 0
-dd_count:       byte 0
-dd_rows:        byte 0
-dd_row:         byte 0
-dd_item_idx:    byte 0
-dd_write_col:   byte 0
-dd_tmp:         byte 0
+dd_col:         byte 0          ; title column for current menu
+dd_left:        byte 0          ; dropdown left border column
+dd_right:       byte 0          ; dropdown right border column
+dd_count:       byte 0          ; number of items in current menu
+dd_rows:        byte 0          ; total dropdown rows (count + 3)
+dd_row:         byte 0          ; current row being drawn
+dd_item_idx:    byte 0          ; current item index
+dd_shortcut:    byte 0          ; shortcut PETSCII for current item
+dd_sel_flag:    byte 0          ; $ff if current item is selected, else 0
+ddr_off:        byte 0          ; interior column offset for drawing
 dd_label_buf:   ds DROP_WIDTH, 0
 
 ; =========================================================
@@ -1239,8 +1375,9 @@ cs_tail:
 
 ; =========================================================
 ; draw_menu_bar (screen row 0): reverse-video bar with menu titles
-; Shows FILE, DISK, and '-' (Help) with half-block borders.
-; The active menu title (when menu_active) is normal video.
+; Shows FILE, DISK, and HELP with half-block borders.
+; The active menu title area (when menu_active) is normal video;
+; inactive titles are reversed against the reversed bar.
 ; =========================================================
 
 draw_menu_bar:
@@ -1272,8 +1409,32 @@ dmb_fill:
         cpy #39
         bne dmb_fill
 
-        ; Write menu titles: FILE at cols 3-6, DISK at cols 9-12, '-' at col 35
-        ; Each title letter is reversed unless it is the active menu
+        ; If a menu is active, draw its 6-column title area as normal spaces
+        ; so the active title stands out in normal video.
+
+        lda menu_active
+        beq dmb_titles
+        ldx menu_idx
+        lda menu_col,x
+        sec
+        sbc #1
+        tay
+        lda #SC_SPACE
+        ldx #6
+
+        ; Write 6 normal spaces for the active title area
+
+dmb_active_fill:
+
+        sta (sp_lo),y
+        iny
+        dex
+        bne dmb_active_fill
+
+dmb_titles:
+
+        ; Write menu titles: FILE at cols 3-6, DISK at cols 9-12, HELP at cols 33-36
+        ; Each title letter is reversed unless it is in the active menu area
         ; FILE = screen codes $06,$09,$0C,$05
 
         ldy #3
@@ -1304,17 +1465,26 @@ dmb_fill:
         lda #$0B                ; 'K'
         jsr dmb_write_title_char
 
-        ; '—' (Help) at col 35, screen code $40 (horizontal line)
+        ; HELP = screen codes $08,$05,$0C,$10
 
+        ldy #33
+        lda #$08                ; 'H'
+        jsr dmb_write_title_char
+        ldy #34
+        lda #$05                ; 'E'
+        jsr dmb_write_title_char
         ldy #35
-        lda #$40                ; '—'
+        lda #$0C                ; 'L'
+        jsr dmb_write_title_char
+        ldy #36
+        lda #$10                ; 'P'
         jsr dmb_write_title_char
         rts
 
 ; dmb_write_title_char: A = screen code, Y = column.
-; If menu_active and this position is in the active menu title,
+; If menu_active and this position is in the active menu title area,
 ; write normal video (no bit 7). Otherwise write reversed (bit 7 set).
-; The active menu title columns are: File=3-6, Disk=9-12, Help=35.
+; The active menu title areas are: File=cols 2-7, Disk=cols 8-13, Help=cols 32-37.
 
 dmb_write_title_char:
 
@@ -1327,26 +1497,29 @@ dmb_write_title_char:
         lda menu_idx
         cmp #MENU_FILE
         bne dmb_chk_disk
-        cpy #3
+        cpy #2
         bcc dmb_rev
-        cpy #7
-        bcc dmb_normal          ; cols 3-6 = File title
+        cpy #8
+        bcc dmb_normal          ; cols 2-7 = File active area
         jmp dmb_rev
 
 dmb_chk_disk:
 
         cmp #MENU_DISK
         bne dmb_chk_help
-        cpy #9
+        cpy #8
         bcc dmb_rev
-        cpy #13
-        bcc dmb_normal          ; cols 9-12 = Disk title
+        cpy #14
+        bcc dmb_normal          ; cols 8-13 = Disk active area
         jmp dmb_rev
 
 dmb_chk_help:
 
-        cpy #35
-        beq dmb_normal          ; col 35 = Help title
+        cpy #32
+        bcc dmb_rev
+        cpy #38
+        bcc dmb_normal          ; cols 32-37 = Help active area
+        jmp dmb_rev
 
 dmb_rev:
 
@@ -3807,6 +3980,13 @@ op_info:
         jsr selected_entry_sp
         bcs oi_done             ; empty panel
 
+        ; Save the entry pointer; draw_info_window clobbers sp_lo/sp_hi
+
+        lda sp_lo
+        sta diw_entry_lo
+        lda sp_hi
+        sta diw_entry_hi
+
         ; Draw a simple info window over the screen
 
         jsr draw_info_window
@@ -3930,14 +4110,357 @@ diw_bot:
         iny
         lda #$0F                ; 'O'
         sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$0D                ; 'M'
+        sta (sp_lo),y
+        iny
+        lda #$01                ; 'A'
+        sta (sp_lo),y
+        iny
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$09                ; 'I'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$0E                ; 'N'
+        sta (sp_lo),y
 
-        ; Write filename at row 11
-        ; TODO: write actual file info from selected entry
+        ; Row 11: filename (16 chars max, PETSCII -> screen code)
+
+        ldx #11
+        jsr diw_set_row
+        ldx #0
+
+diw_name_loop:
+
+        cpx #16
+        bcs diw_name_done
+        txa
+        clc
+        adc #3                  ; record offset = 3 + name_index
+        tay
+        lda (sp_lo),y
+        beq diw_name_pad
+        cmp #$22                ; skip quote
+        beq diw_name_pad
+        cmp #$A0                ; skip shifted-space
+        beq diw_name_pad
+        jsr petscii_to_screen
+        jmp diw_name_store
+
+diw_name_pad:
+
+        lda #SC_SPACE
+
+diw_name_store:
+
+        pha                     ; save screen char
+        lda diw_scr_lo
+        sta sp_lo
+        lda diw_scr_hi
+        sta sp_hi
+        txa
+        clc
+        adc #7
+        tay
+        pla
+        sta (sp_lo),y
+        lda diw_entry_lo
+        sta sp_lo
+        lda diw_entry_hi
+        sta sp_hi
+        inx
+        jmp diw_name_loop
+
+diw_name_done:
+
+        ; Row 12: type
+
+        ldx #12
+        jsr diw_set_row
+        ldy #7
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$19                ; 'Y'
+        sta (sp_lo),y
+        iny
+        lda #$10                ; 'P'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$3A                ; ':'
+        sta (sp_lo),y
+        iny
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        lda diw_entry_lo
+        sta sp_lo
+        lda diw_entry_hi
+        sta sp_hi
+        ldy #2
+        lda (sp_lo),y
+        pha
+        lda diw_scr_lo
+        sta sp_lo
+        lda diw_scr_hi
+        sta sp_hi
+        pla
+        ldy #13
+        sta (sp_lo),y
+
+        ; Row 13: blocks
+
+        ldx #13
+        jsr diw_set_row
+        ldy #7
+        lda #$02                ; 'B'
+        sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$03                ; 'C'
+        sta (sp_lo),y
+        iny
+        lda #$0B                ; 'K'
+        sta (sp_lo),y
+        iny
+        lda #$13                ; 'S'
+        sta (sp_lo),y
+        iny
+        lda #$3A                ; ':'
+        sta (sp_lo),y
+        iny
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        lda diw_entry_lo
+        sta sp_lo
+        lda diw_entry_hi
+        sta sp_hi
+        ldy #0
+        lda (sp_lo),y
+        sta dsf_blo
+        iny
+        lda (sp_lo),y
+        sta dsf_bhi
+        jsr dsf_format_blocks
+        lda diw_scr_lo
+        sta sp_lo
+        lda diw_scr_hi
+        sta sp_hi
+        ldy #14
+        ldx #0
+        lda #0
+        sta diw_lead
+
+diw_blk_loop:
+
+        cpx #5
+        bcs diw_blk_done
+        lda dsf_blkstr,x
+        cmp #$30                ; '0'
+        bne diw_blk_nz
+        lda diw_lead
+        bne diw_blk_nz
+        lda #SC_SPACE
+        jmp diw_blk_store
+
+diw_blk_nz:
+
+        lda #1
+        sta diw_lead
+        lda dsf_blkstr,x
+
+diw_blk_store:
+
+        sta (sp_lo),y
+        iny
+        inx
+        jmp diw_blk_loop
+
+diw_blk_done:
+
+        ; Row 14: drive
+
+        ldx #14
+        jsr diw_set_row
+        ldy #7
+        lda #$04                ; 'D'
+        sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$09                ; 'I'
+        sta (sp_lo),y
+        iny
+        lda #$16                ; 'V'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$3A                ; ':'
+        sta (sp_lo),y
+        iny
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+        lda active_panel
+        tax
+        lda p_drive,x
+        clc
+        adc #CH_0
+        jsr petscii_to_screen
+        ldy #14
+        sta (sp_lo),y
+
+        ; Row 15: bytes = blocks * 254
+
+        ldx #15
+        jsr diw_set_row
+        ldy #7
+        lda #$02                ; 'B'
+        sta (sp_lo),y
+        iny
+        lda #$19                ; 'Y'
+        sta (sp_lo),y
+        iny
+        lda #$14                ; 'T'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$13                ; 'S'
+        sta (sp_lo),y
+        iny
+        lda #$3A                ; ':'
+        sta (sp_lo),y
+        iny
+        lda #SC_SPACE
+        sta (sp_lo),y
+        iny
+
+        ; Compute bytes = blocks * 254 (low 16 bits are enough for 2031)
+        lda diw_entry_lo
+        sta sp_lo
+        lda diw_entry_hi
+        sta sp_hi
+        ldy #0
+        lda (sp_lo),y
+        sta dsf_blo
+        iny
+        lda (sp_lo),y
+        sta dsf_bhi
+        jsr diw_mul254
+        lda diw_bytes_lo
+        sta dsf_blo
+        lda diw_bytes_mid
+        sta dsf_bhi
+        jsr dsf_format_blocks
+        lda diw_scr_lo
+        sta sp_lo
+        lda diw_scr_hi
+        sta sp_hi
+        ldy #14
+        ldx #0
+        lda #0
+        sta diw_lead
+
+diw_bytes_loop:
+
+        cpx #5
+        bcs diw_bytes_done
+        lda dsf_blkstr,x
+        cmp #$30                ; '0'
+        bne diw_bytes_nz
+        lda diw_lead
+        bne diw_bytes_nz
+        lda #SC_SPACE
+        jmp diw_bytes_store
+
+diw_bytes_nz:
+
+        lda #1
+        sta diw_lead
+        lda dsf_blkstr,x
+
+diw_bytes_store:
+
+        sta (sp_lo),y
+        iny
+        inx
+        jmp diw_bytes_loop
+
+diw_bytes_done:
 
         jsr present_screen
         rts
 
+; diw_set_row: set sp to screen row X (cols 5-34) and save in diw_scr
+
+diw_set_row:
+
+        jsr row_addr_sp
+        lda sp_lo
+        sta diw_scr_lo
+        lda sp_hi
+        sta diw_scr_hi
+        rts
+
 diw_row:        byte 0
+diw_entry_lo:   byte 0
+diw_entry_hi:   byte 0
+diw_scr_lo:     byte 0
+diw_scr_hi:     byte 0
+diw_lead:       byte 0
+diw_bytes_lo:   byte 0
+diw_bytes_mid:  byte 0
+diw_bytes_hi:   byte 0
+
+; diw_mul254: multiply dsf_blo/dsf_bhi by 254, result in diw_bytes_lo/mid/hi
+
+diw_mul254:
+
+        ; blocks * 2
+        lda dsf_blo
+        asl
+        sta diw_bytes_lo        ; low byte of blocks*2
+        lda dsf_bhi
+        rol
+        sta diw_bytes_mid       ; mid byte of blocks*2
+        lda #0
+        rol
+        sta diw_bytes_hi        ; high byte of blocks*2
+
+        ; result = blocks*256 - blocks*2
+        sec
+        lda #0
+        sbc diw_bytes_lo
+        sta diw_bytes_lo
+        lda dsf_blo
+        sbc diw_bytes_mid
+        sta diw_bytes_mid
+        lda dsf_bhi
+        sbc diw_bytes_hi
+        sta diw_bytes_hi
+        rts
 
 ; =========================================================
 ; op_about: show about window
@@ -3951,76 +4474,112 @@ op_about:
         rts
 
 ; draw_about_window: bordered window with program info
+; Window: rows 5-19, cols 5-34, with inner vertical bars at cols 8 and 31.
+
+ABOUT_TOP       = 5
+ABOUT_BOT       = 19
+ABOUT_LEFT      = 5
+ABOUT_RIGHT     = 34
+ABOUT_INNER_L   = 8
+ABOUT_INNER_R   = 31
 
 draw_about_window:
 
-        ; Window: rows 9-15, cols 5-34
+        ; Draw top border
 
-        ldx #9
+        ldx #ABOUT_TOP
         jsr row_addr_sp
-        ldy #5
+        ldy #ABOUT_LEFT
         lda #BOX_TL
         sta (sp_lo),y
         lda #BOX_H
-        ldy #6
+        ldy #ABOUT_LEFT+1
 
 daw_top:
 
         sta (sp_lo),y
         iny
-        cpy #34
+        cpy #ABOUT_RIGHT
         bne daw_top
-        ldy #34
+        ldy #ABOUT_RIGHT
         lda #BOX_TR
         sta (sp_lo),y
-        ldx #10
+
+        ; Draw side borders and clear interior for rows 6..18
+
+        ldx #ABOUT_TOP+1
 
 daw_mid:
 
         stx daw_row
         jsr row_addr_sp
-        ldy #5
+        ldy #ABOUT_LEFT
         lda #BOX_V
         sta (sp_lo),y
-        ldy #34
+        ldy #ABOUT_RIGHT
         lda #BOX_V
         sta (sp_lo),y
-        ldy #6
+
+        ; Clear interior
+
+        ldy #ABOUT_LEFT+1
         lda #SC_SPACE
 
 daw_clr:
 
         sta (sp_lo),y
         iny
-        cpy #34
+        cpy #ABOUT_RIGHT
         bne daw_clr
+
         ldx daw_row
         inx
-        cpx #15
+        cpx #ABOUT_BOT
         bne daw_mid
-        ldx #15
+
+        ; Draw bottom border
+
+        ldx #ABOUT_BOT
         jsr row_addr_sp
-        ldy #5
+        ldy #ABOUT_LEFT
         lda #BOX_BL
         sta (sp_lo),y
         lda #BOX_H
-        ldy #6
+        ldy #ABOUT_LEFT+1
 
 daw_bot:
 
         sta (sp_lo),y
         iny
-        cpy #34
+        cpy #ABOUT_RIGHT
         bne daw_bot
-        ldy #34
+        ldy #ABOUT_RIGHT
         lda #BOX_BR
         sta (sp_lo),y
 
-        ; Write "PET COMMANDER" at row 11, col 10
+        ; Draw inner vertical bars at cols 8 and 31 (rows 6..18)
 
-        ldx #11
+        ldx #ABOUT_TOP+1
+
+daw_bars:
+
+        stx daw_row
         jsr row_addr_sp
-        ldy #10
+        ldy #ABOUT_INNER_L
+        lda #HB_LEFT
+        sta (sp_lo),y
+        ldy #ABOUT_INNER_R
+        sta (sp_lo),y
+        ldx daw_row
+        inx
+        cpx #ABOUT_BOT
+        bne daw_bars
+
+        ; Content row 8 (absolute): "PET COMMANDER" centered at cols 14-25
+
+        ldx #8
+        jsr row_addr_sp
+        ldy #14
         lda #$10                ; 'P'
         sta (sp_lo),y
         iny
@@ -4060,22 +4619,82 @@ daw_bot:
         lda #$12                ; 'R'
         sta (sp_lo),y
 
-        ; Write "v0.3" at row 12, col 13
+        ; Row 9 (absolute): decorative underline at cols 12-17
 
-        ldx #12
+        ldx #9
         jsr row_addr_sp
-        ldy #13
-        lda #$96                ; 'V' reversed (lowercase v as reversed)
+        ldy #12
+        lda #HB_LEFT
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+        iny
+        sta (sp_lo),y
+
+        ; Row 11 (absolute): "VERSION: 0.3" at cols 14-25
+
+        ldx #11
+        jsr row_addr_sp
+        ldy #14
+        lda #$16                ; 'V'
+        sta (sp_lo),y
+        iny
+        lda #$05                ; 'E'
+        sta (sp_lo),y
+        iny
+        lda #$12                ; 'R'
+        sta (sp_lo),y
+        iny
+        lda #$13                ; 'S'
+        sta (sp_lo),y
+        iny
+        lda #$09                ; 'I'
+        sta (sp_lo),y
+        iny
+        lda #$0F                ; 'O'
+        sta (sp_lo),y
+        iny
+        lda #$0E                ; 'N'
+        sta (sp_lo),y
+        iny
+        lda #$3A                ; ':'
+        sta (sp_lo),y
+        iny
+        lda #SC_SPACE
         sta (sp_lo),y
         iny
         lda #$30                ; '0'
         sta (sp_lo),y
         iny
-        lda #SC_DOT             ; '.'
+        lda #$2E                ; '.'
         sta (sp_lo),y
         iny
         lda #$33                ; '3'
         sta (sp_lo),y
+
+        ; Row 18 (absolute): "OK" button at cols 24-27
+
+        ldx #18
+        jsr row_addr_sp
+        ldy #24
+        lda #HB_RLEFT           ; $E1 reversed left half-block
+        sta (sp_lo),y
+        iny
+        lda #$8F                ; 'O' reversed
+        sta (sp_lo),y
+        iny
+        lda #$8B                ; 'K' reversed
+        sta (sp_lo),y
+        iny
+        lda #HB_LEFT            ; $61 left half-block
+        sta (sp_lo),y
+
         jsr present_screen
         rts
 
