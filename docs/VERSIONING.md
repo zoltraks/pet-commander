@@ -1,7 +1,5 @@
 # Versioning
 
-<!-- Version: 0.1 | Date: 2026-06-30 | Status: Requires review -->
-
 This file is the authoritative source for version numbering and changelog maintenance.
 
 ## Version Source of Truth

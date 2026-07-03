@@ -5,7 +5,8 @@
 ; for Commodore PET 3032
 ;
 ; Build:  dasm src/commander.asm -f1 -o build/commander.prg
-; Run:    xpet -model 3032 -drive8type 2031 -autostart work.d64
+; Disk:   disk/build-work-d64.sh refreshes disk/work.d64
+; Run:    xpet -model 3032 -drive8type 2031 -autostart disk/work.d64
 ;
 ; The program borrows zero-page bytes $FB-$FE for indirect
 ; addressing (KERNAL tape pointers; safe while tape is idle).
@@ -19,7 +20,7 @@
 ; (0.9 -> 1.0, 9.9 -> 10.0). See docs/VERSIONING.md.
 
 VERSION_MAJOR = 0
-VERSION_MINOR = 3
+VERSION_MINOR = 4
 
 ; ---- KERNAL routines ----------------------------------
 ; PET 3032 KERNAL jump table entries.  Note: the PET does NOT
@@ -4556,6 +4557,14 @@ daw_top:
         lda #BOX_TR
         sta (sp_lo),y
 
+        ; Overlay T-junctions where the top border crosses the panel frames
+        ; at columns 19 and 20 (0-indexed), which are columns 20 and 21 from 1.
+        ldy #19
+        lda #BOX_TJU
+        sta (sp_lo),y
+        ldy #20
+        sta (sp_lo),y
+
         ; Draw side borders and clear interior for rows 6..19
 
         ldx #ABOUT_TOP+1
@@ -4606,6 +4615,14 @@ daw_bot:
         bne daw_bot
         ldy #ABOUT_RIGHT
         lda #BOX_BR
+        sta (sp_lo),y
+
+        ; Overlay T-junctions where the bottom border crosses the panel frames
+        ; at columns 19 and 20 (0-indexed), which are columns 20 and 21 from 1.
+        ldy #19
+        lda #BOX_TJD
+        sta (sp_lo),y
+        ldy #20
         sta (sp_lo),y
 
         ; Draw inner vertical bars at cols 8 and 31 on rows 6..19.
@@ -4700,7 +4717,8 @@ daw_next_row:
         iny
         sta (sp_lo),y
 
-        ; Row 10 (absolute): "VERSION: 0.3" at cols 14-25
+        ; Row 10 (absolute): "VERSION: M.N" at cols 14-25
+        ; M = VERSION_MAJOR, N = VERSION_MINOR (screen code = value + '0')
 
         ldx #10
         jsr row_addr_sp
@@ -4732,13 +4750,17 @@ daw_next_row:
         lda #SC_SPACE
         sta (sp_lo),y
         iny
-        lda #$30                ; '0'
+        lda #VERSION_MAJOR
+        clc
+        adc #$30                ; '0' + major
         sta (sp_lo),y
         iny
         lda #$2E                ; '.'
         sta (sp_lo),y
         iny
-        lda #$33                ; '3'
+        lda #VERSION_MINOR
+        clc
+        adc #$30                ; '0' + minor
         sta (sp_lo),y
 
         ; Row 13 (absolute): "BROUGHT TO YOU BY ZOLTAR X" at cols 7-32

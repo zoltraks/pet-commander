@@ -1,7 +1,5 @@
 # Workflow
 
-<!-- Version: 1.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 This file is the authoritative source for the day-to-day development process.
 
 ## Pre-Work Self-Check
@@ -56,7 +54,7 @@ Before any change, and again whenever the model or session changes:
 
 ## Version-Based Implementation Cycle
 
-This project uses ASE workflow directories. The current version is read from `VERSION_MAJOR` and `VERSION_MINOR` in `src/commander.asm` (currently `0.1`) and is used for the `change/`, `plan/`, and `refactoring/` path segments. See `VERSIONING.md`.
+This project uses ASE workflow directories. The current version is read from `VERSION_MAJOR` and `VERSION_MINOR` in `src/commander.asm` and is used for the `change/`, `plan/`, and `refactoring/` path segments. See `VERSIONING.md`.
 
 A version bump does not move existing documents and does not create a new version directory by itself.
 
@@ -94,15 +92,6 @@ After refactoring, evaluate the result in `docs/refactoring/<version>/refactorin
 - Refactoring assessments: `docs/refactoring/<version>/refactoring-assessment.md`
 - On-demand reports: `docs/report/<report-name>.md`
 
-### Naming Summary
-
-| Stage                  | Location                      | File name                         |
-| ---------------------- | ----------------------------- | --------------------------------- |
-| Change request         | `docs/change/<version>/`      | `<change-name>.md`                |
-| Implementation plan    | `docs/plan/<version>/`        | `<change-name>-implementation.md` |
-| Refactoring proposal   | `docs/refactoring/<version>/` | `refactoring-proposal.md`         |
-| Refactoring assessment | `docs/refactoring/<version>/` | `refactoring-assessment.md`       |
-
 ## Cycle Rules
 
 - **No time estimates**: Plans and refactoring proposals never include time or duration estimates.
@@ -115,9 +104,9 @@ After refactoring, evaluate the result in `docs/refactoring/<version>/refactorin
 
 When asked to archive documents for a specific version, move the entire version directory into the matching `archive/` subdirectory, preserving structure and contents.
 
-- Archive change requests for `0.1`: move `docs/change/0.1/` to `docs/archive/change/0.1/`.
-- Archive plans for `0.1`: move `docs/plan/0.1/` to `docs/archive/plan/0.1/`.
-- Archive refactoring docs for `0.1`: move `docs/refactoring/0.1/` to `docs/archive/refactoring/0.1/`.
+- Archive change requests: move `docs/change/<version>/` to `docs/archive/change/<version>/`.
+- Archive plans: move `docs/plan/<version>/` to `docs/archive/plan/<version>/`.
+- Archive refactoring docs: move `docs/refactoring/<version>/` to `docs/archive/refactoring/<version>/`.
 - Archive a report: move the file from `docs/report/` to `docs/archive/report/`.
 
 ## Temporary Files

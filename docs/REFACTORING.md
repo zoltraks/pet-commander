@@ -1,7 +1,5 @@
 # Refactoring
 
-<!-- Version: 1.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 This file is the authoritative source for how refactoring is proposed, executed, and assessed in PET Commander.
 
 ## Objective

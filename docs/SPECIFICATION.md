@@ -1,7 +1,5 @@
 # Specification
 
-<!-- Version: 1.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 This file is the authoritative source for how PET Commander works internally.
 It cross-references `src/commander.asm` rather than duplicating large code blocks.
 
@@ -9,249 +7,73 @@ It cross-references `src/commander.asm` rather than duplicating large code block
 
 ### Entry record
 
-Each directory entry is a fixed `ENT_SIZE` = 20-byte record. See the `entries_p0` / `entries_p1` tables in `src/commander.asm`.
+Each directory entry is a 20-byte record containing block count, file type, and a 16-character PETSCII name. Records are addressed by index with a multiply-by-20 helper.
 
-| Offset | Field    | Size | Meaning                                   |
-| ------ | -------- | ---- | ----------------------------------------- |
-| 0      | blo      | 1    | Block count, low byte.                    |
-| 1      | bhi      | 1    | Block count, high byte.                   |
-| 2      | type     | 1    | File-type character (e.g. `P`, `S`).      |
-| 3..18  | name[16] | 16   | File name, PETSCII, space-padded.         |
-| 19     | pad      | 1    | Padding to keep the record 20 bytes wide. |
+### State domains
 
-Records are addressed by `record = table_base + index * 20`. The multiply-by-20 helper is `mul20`; record and entry pointer setup is in `entry_record_sp` and `selected_entry_sp`.
+- **Global UI state**: active panel, quit request, status message override, and last key value.
+- **Per-panel state**: drive number, entry count, selection index, scroll position, and disk title for each panel.
+- **Scratch buffers**: transient buffers owned by the operation in progress (DOS command, prompt input, saved source name, status string).
+- **Viewer state**: display mode, character set, scroll offset, chunk boundaries, and a partial-load buffer. Some flags persist across viewer opens; per-open state resets each time.
 
-### Per-panel state
-
-Two-element parallel arrays, index 0 = left, 1 = right. Defined near the top of `src/commander.asm`.
-
-| Symbol    | Size      | Meaning                                  |
-| --------- | --------- | ---------------------------------------- |
-| `p_drive` | 2 bytes   | Device number per panel. Both start `8`. |
-| `p_count` | 2 bytes   | Number of valid entries in the panel.    |
-| `p_sel`   | 2 bytes   | Selected entry index.                    |
-| `p_top`   | 2 bytes   | Index of the first visible row (scroll). |
-| `p_title` | 32 bytes  | Disk-name header text per panel.         |
-
-### Global UI state
-
-| Symbol         | Meaning                                              |
-| -------------- | ---------------------------------------------------- |
-| `active_panel` | `0` = left, `1` = right.                             |
-| `quit_flag`    | Nonzero requests exit from `main_loop`.              |
-| `status_msg`   | Nonzero means `status_buf` overrides the help row.   |
-| `key_val`      | Last key read from `GETIN`.                          |
-
-### Scratch buffers
-
-| Symbol       | Size     | Owner                         |
-| ------------ | -------- | ----------------------------- |
-| `cmd_buf`    | 48 bytes | DOS command being assembled.  |
-| `prompt_buf` | 17 bytes | Text the user is typing.      |
-| `savename`   | 16 bytes | Saved source name for ops.    |
-| `status_buf` | 41 bytes | Drive status string to show.  |
-
-### Viewer state
-
-Owned by the viewer module. Separate from panel state. `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens within one program run; the rest reset on each open.
-
-| Symbol             | Size     | Meaning                                              |
-| ------------------ | -------- | ---------------------------------------------------- |
-| `view_mode`        | 1 byte   | `0` = text display, `1` = hex display. Persisted.    |
-| `view_charset_mode`| 1 byte   | `0` = SCREEN (raw screen codes), `1` = ASCII (translate). Persisted. |
-| `view_charset`     | 1 byte   | `0` = UPPER, `1` = LOWER. Persisted.                 |
-| `view_char_offset` | 1 byte   | `$00` when UPPER, `$40` when LOWER. ORed into label letter screen codes so labels render uppercase in either set. Set immediately when the charset flag changes, so label rendering into `BUFFER` composes correctly before the PCR write is flushed. |
-| `saved_pcr_cs`     | 1 byte   | PCR bits 3:1 saved on viewer entry, restored on exit. |
-| `view_pcr_pending` | 1 byte   | Nonzero when a PCR charset write is staged but not yet applied. Reset to `0` on each viewer open and after each flush. |
-| `view_pending_pcr_cs` | 1 byte | Staged PCR bits 3:1 to OR into PCR during the VBLANK flush. |
-| `view_top`         | 2 bytes  | Byte offset of the top-left visible byte.            |
-| `view_chunk_base`  | 2 bytes  | Byte offset of the first byte in the chunk buffer.   |
-| `view_chunk_len`   | 2 bytes  | Number of valid bytes in the chunk buffer.           |
-| `view_at_eof`      | 1 byte   | Nonzero if the last chunk read reached end of file.  |
-| `view_row_size`    | 1 byte   | Bytes per visible row (`VIEW_TEXT_COLS` or `VIEW_HEX_COLS`). |
-| `view_screen_size` | 2 bytes  | Total bytes per screen (`VIEW_ROWS * view_row_size`). |
-| `view_page_size`   | 2 bytes  | Bytes per page scroll. Text: `(VIEW_ROWS-1) * VIEW_TEXT_COLS = 760`. Hex: `VIEW_ROWS * VIEW_HEX_COLS = 168`. |
-| `view_fname`       | 16 bytes | Copy of the file name being viewed.                  |
-| `view_fname_len`   | 1 byte   | Length of the file name in `view_fname`.             |
-| `view_chunk`       | 2048 bytes | Chunk buffer for partial file loading.             |
-
-## Constants
-
-These values must not be hard-coded ad hoc elsewhere. They are defined once at the top of `src/commander.asm`.
-
-| Constant     | Value   | Meaning                                          |
-| ------------ | ------- | ------------------------------------------------ |
-| `SCREEN`     | `$8000` | Base of 40x25 screen RAM. Destination of the blit. |
-| `BUFFER`     | `$7C00` | 1000-byte back buffer, page-aligned. Target of all drawing. |
-| `VIA_PORTB`  | `$E840` | VIA port B; bit 5 carries the VBLANK signal.     |
-| `RETRACE_BIT`| `$20`   | Mask for VIA PB5 (VBLANK: LOW = blank, HIGH = active). |
-| `PANEL_ROWS` | `20`    | Visible directory rows per panel.                |
-| `PANEL_WIDTH`| `20`    | Columns per panel including frame borders.       |
-| `PANEL_INNER`| `18`    | Inner content columns (excluding frame borders). |
-| `MAX_ENTRY`  | `64`    | Maximum entries per panel.                       |
-| `ENT_SIZE`   | `20`    | Bytes per entry record.                          |
-| `VIEW_ROWS`  | `21`    | Visible content rows in the viewer (rows 2-22 inside frame). |
-| `VIEW_TEXT_COLS` | `38` | Columns per text-mode row (cols 1-38 inside frame). |
-| `VIEW_HEX_COLS`  | `8`  | Bytes per hex-mode row in the viewer.           |
-| `VIEW_CHUNK` | `2048`  | Chunk buffer size for partial file loading.      |
-| `VIEW_LFN`   | `3`     | Logical file number used by the viewer.          |
-| `PCR`        | `$E84C` | VIA Peripheral Control Register; bits 3:1 select the character set. |
-| `PCR_U`      | `$0C`   | PCR bits 3:1 = 110 -> uppercase/graphics set.    |
-| `PCR_L`      | `$0E`   | PCR bits 3:1 = 111 -> lowercase/text set.        |
-| `sp_lo/hi`   | `$FB/$FC` | Borrowed primary indirect pointer.             |
-| `dp_lo/hi`   | `$FD/$FE` | Borrowed secondary indirect pointer.           |
-
-### KERNAL and PET ROM symbols
-
-KERNAL jump-table vectors used: `OPEN $FFC0`, `CLOSE $FFC3`, `CHKIN $FFC6`, `CHKOUT $FFC9`, `CLRCHN $FFCC`, `CHRIN $FFCF`, `CHROUT $FFD2`, `GETIN $FFE4`, `CLALL $FFE7`.
-
-PET internal entry points and zero-page locations used by the OPEN/CLOSE wrappers: `PET_OPEN_LOGIC $F524`, `PET_CLOSE_LOGIC $F2AC`, `PET_FNLEN $D1`, `PET_LA $D2`, `PET_SA $D3`, `PET_DEV $D4`, `PET_FNADR_LO $DA`, `PET_FNADR_HI $DB`. KERNAL ZP mirrors: `STATUS $0096`, `BLNSW $00A7`.
-
-The PET has no `SETNAM` or `SETLFS`. The wrappers `pet_setnam` and `pet_setlfs` set the zero-page parameters directly, then call the internal logic. Treat these addresses as PET-3032-specific; they are a portability constraint recorded in `ARCHITECTURE.md`.
+The exact field names, sizes, and constants are defined in `src/commander.asm`.
 
 ## Algorithms
 
-### Directory parse state machine
+### Directory parsing
 
-`load_panel` opens the directory file `$` on the panel's drive, skips the BASIC-style load header, then walks the directory listing one logical line at a time. A small state machine (`lp_state` with the `lp_t_*` and `lp_b_*` blocks) extracts, per entry:
+`load_panel` opens the directory file `$` on the panel's drive, skips the BASIC load header, and walks the listing one logical line at a time. A state machine extracts the block count, file name, and type for each entry, stopping at EOF or when the entry cap is reached. Open failure produces the `DRIVE NOT READY` message.
 
-- the leading block count (used as `blo`/`bhi`),
-- the quoted file name (copied into `name[16]`, space-padded),
-- the trailing type characters (reduced to a single type character).
+### Navigation and scrolling
 
-Parsing stops at end of file or when `MAX_ENTRY` records are filled (`lp_room` guards the cap). On open failure the routine sets the `DRIVE NOT READY` message and returns.
+Navigation keeps the selected index inside the visible window. Cursor up/down adjust the selection and scroll position, clamping at the ends. HOME resets to the first entry. Only the affected panel is redrawn after a move; a panel switch redraws both highlight states.
 
-### Selection and scrolling
+### Rendering and blit
 
-Navigation keeps the selected index inside the visible window of `PANEL_ROWS` rows.
+All drawing composes into a back buffer in RAM. `present_screen` waits for VBLANK, flushes any staged PCR charset write, and copies the back buffer to screen RAM in one atomic pass. This eliminates flicker during navigation, reloads, scrolling, and prompt input. The VBLANK poll is bounded so it never hangs under emulators that do not expose the retrace signal.
 
-- `cursor_up` / `cursor_down` adjust `p_sel`, clamping at the ends, and adjust `p_top` so the selection stays visible.
-- `do_home` resets `p_sel` and `p_top` to the first entry.
-- Only the affected panel is redrawn after a move (`redraw_active`); a panel switch redraws both highlight states.
+### Viewer
 
-### Record indexing
+The viewer loads file data in fixed-size chunks from a sequential read channel. Scrolling within the current chunk needs no disk I/O; scrolling past the chunk boundary reloads from the new offset. Because CBM-DOS sequential files have no backward seek, scrolling up past the chunk re-opens the file and skips forward to the target offset.
 
-`mul20` multiplies an entry index by `ENT_SIZE` (20) using shift-and-add (`index*16 + index*4`) to produce the byte offset into an entry table. `entry_record_sp` and `selected_entry_sp` set the `sp_lo/sp_hi` pointer to a specific record.
+The viewer renders inside a bordered frame with a header and footer. Text mode supports SCREEN (raw screen codes) and ASCII (translated screen codes) render modes. Hex mode shows an offset, hex byte pairs, and raw bytes. Non-printable ASCII bytes render as a dot placeholder. The header and footer labels are rendered so they stay uppercase in either character set.
 
-### Number formatting
+### Character-set switching
 
-`print_num3` renders a 16-bit block count (`num_lo`/`num_hi`) as a right-justified three-digit field by repeated subtraction of hundreds and tens. Leading zeros are blanked.
+The viewer switches between UPPER and LOWER character sets via the VIA PCR register. The PCR write is staged and flushed during the same VBLANK as the back-buffer copy, so the content and the charset appear together. The original PCR bits are saved on viewer entry and restored on exit so the machine returns to the uppercase set.
 
-### PETSCII to screen code
+### ASCII translation
 
-`petscii_to_screen` converts a PETSCII byte to the screen-code value poked into screen RAM. The PET screen does not use PETSCII directly; the conversion maps the relevant ranges (the `p2s_sub40` path handles the offset range).
-
-### Screen addressing
-
-`row_addr_sp` computes the back-buffer address of a given text row into the `sp` pointer so draw routines can write a row without recomputing `row*40 + $7C00` inline. Its base is `BUFFER`, not `SCREEN`: all `sp`-based drawing composes into the back buffer. The routines that write row 0 or row 24 directly (`draw_title_bar`, `draw_help_bar`, `draw_status`, `draw_prompt_label`, `show_prompt_buf`) and `clear_screen` also target `BUFFER`.
-
-### Present and blit
-
-`present_screen` is called at the end of every redraw entry point and after every interactive row-24 update. It waits for VBLANK, flushes any staged PCR charset write, then copies the back buffer to screen RAM in one atomic pass. The PCR flush and the content blit share the same VBLANK window so a character-set switch and its new content appear together with no partial-update window.
-
-- `wait_vblank` polls VIA PORT B bit 5 (`$E840` bit 5). The signal is LOW during VBLANK and HIGH during active display. A bounded two-phase wait syncs to the start of VBLANK: phase 1 skips any remaining VBLANK (wait while LOW), phase 2 waits for active display to end (wait while HIGH). Each phase is bounded to 256 iterations so the routine never hangs if the retrace bit is not toggling (e.g. under VICE 3.7 xpet, which does not mirror VBLANK onto VIA PB5). On real hardware the bound is never reached and the routine returns at the start of VBLANK. This is polling, not an IRQ handler; no CINV vector is installed.
-- `view_flush_pcr` applies a staged PCR charset write if `view_pcr_pending` is set, using read-modify-write on PCR to preserve CB2 (IEEE-488 NDAC), then clears the flag. It is a no-op (one load plus one branch) when nothing is staged, which is the case for all main-program present calls. The PCR write adds roughly 10 cycles, negligible against the 6000-cycle copy budget.
-- `copy_buffer` copies 1000 bytes from `BUFFER` to `SCREEN` using a page-strided loop (3 full pages of 256 bytes plus a 232-byte tail), mirroring the `clear_screen` pattern. The tail loop uses `txa` before `bne` to test the loop counter (X), not the loaded byte, because `lda` between `dex` and `bne` would overwrite the Z flag. It is the only writer of `SCREEN`.
-
-The 1000-byte copy takes roughly 6000 cycles at 1 MHz, which fits inside the PET VBLANK period.
-
-Present points:
-
-- `full_redraw` (startup, viewer close).
-- `redraw_panels` (after file operations and reload).
-- `redraw_active` (after cursor moves and panel switch).
-- `view_render` (each viewer frame).
-- After `draw_status` and `clear_status` (status row updates).
-- After `draw_prompt_label`, after each `show_prompt_buf` in the `prompt_text` loop, and after the `prompt_yn` confirmation display (prompt input visibility).
-
-`BUFFER` is at a fixed high-RAM address and is not part of the PRG image, so it is uninitialized on load. `init` clears it (via `clear_screen`, which targets `BUFFER`) before the first `full_redraw`.
-
-### Viewer chunk loading
-
-`view_load_chunk` opens the file named in `view_fname` on the active panel's drive using `pet_setnam`/`pet_setlfs` (LFN = `VIEW_LFN`, SA = 0), calls `CHKIN`, skips `view_chunk_base` bytes by repeated `CHRIN`, then reads up to `VIEW_CHUNK` bytes into `view_chunk` via `CHRIN`, checking `STATUS` after each byte. It sets `view_chunk_len` to the count read and `view_at_eof` if `STATUS` became non-zero before `VIEW_CHUNK` bytes. It then calls `CLRCHN` and `pet_close`. The file is closed on every call, so no channel stays open between renders.
-
-### Viewer scrolling
-
-The chunk buffer covers `VIEW_CHUNK` (2048) bytes starting at `view_chunk_base`. The visible window starts at `view_top` and spans `view_screen_size` bytes. Scrolling within the chunk (the common case) requires no disk I/O.
-
-- `view_scroll_down` adds `view_row_size` to `view_top`. If the window extends past the chunk and the file is not at EOF, it reloads the chunk at the new `view_top`. If at EOF, it clamps `view_top` back.
-- `view_scroll_up` subtracts `view_row_size` from `view_top`, clamped at 0. If `view_top` falls below `view_chunk_base`, it reloads the chunk at the new `view_top`.
-- `view_page_down` adds `view_page_size` to `view_top`. In text mode, `view_page_size = (VIEW_ROWS - 1) * VIEW_TEXT_COLS = 760` (20 rows, 1-line overlap). In hex mode, `view_page_size = VIEW_ROWS * VIEW_HEX_COLS = 168` (21 rows, no overlap). Reload and clamp logic matches `view_scroll_down`.
-- `view_page_up` subtracts `view_page_size` from `view_top`, clamped at 0. Reload logic matches `view_scroll_up`.
-- `view_home` sets `view_top` and `view_chunk_base` to 0 and reloads.
-
-The four scroll handlers share a single `view_reload_at_top` helper that copies `view_top` into `view_chunk_base` and calls `view_load_chunk`. `view_home` is the zero-case variant and inlines its reload.
-
-Because CBM-DOS sequential files have no backward seek, scrolling up past the chunk re-opens the file and skips forward byte-by-byte. This is the documented trade-off for chunk-based loading.
-
-### Viewer rendering
-
-`view_render` clears the screen, draws a header bar on row 0, draws a content frame (top border row 1, side borders rows 2-22, bottom border row 23), renders `VIEW_ROWS` (21) content rows (rows 2-22), and draws a footer bar on row 24.
-
-- **Header bar (row 0)**: Reverse-video bar with half-block borders (`$E1` left, `$61` right). Shows `VIEW`, the filename, and the current mode (`TEXT` or `HEX`) right-aligned. All content is reversed (bit 7 set). The fixed labels `VIEW`, `TEXT`, and `HEX` are written as screen codes and have `view_char_offset` ORed in so they render as uppercase letters in either character set. The filename is converted once via `petscii_to_screen` and is not re-translated on a charset switch, so it follows the active set (e.g. `FILE.TXT` shows as `file.txt` in LOWER).
-- **Footer bar (row 24)**: Reverse-video bar with half-block borders. `view_draw_footer` writes 40 bytes from the `view_footer_base` template, applying `view_char_offset` only to positions where `(base & $7F)` is in `$01`-`$1A` (letter positions), so the shortcut labels `TEXT`, `HEX`, `ASCII`, `SCREEN`, `LOWER`, `UPPER`, `EXIT` render as uppercase in either set. Borders (`$E1`, `$61`) and reversed space (`$A0`) pass through unchanged. The shortcut letters T, H, A, S, L, U, E are in normal video; the rest is reversed.
-- **Content frame**: Center-line box drawing. Corners `$70`/`$6E` (top), `$6D`/`$7D` (bottom). Horizontal `$40`, vertical `$5D`. In hex mode, T-junctions `$72` (down) at columns 5, 17, 29 and `$71` (up) at column 34 on the top border; `$71` (up) at 5, 17, 29, 34 on the bottom border; vertical dividers `$5D` at 5, 17, 29, 34 on content rows. In text mode, no internal dividers. All frame codes are identical in both character sets.
-- **Text mode**: each content row renders `VIEW_TEXT_COLS` (38) bytes from the chunk buffer at columns 1-38. In SCREEN mode (`view_charset_mode = 0`) the raw byte is stored directly as a screen code with no conversion and no dot substitution (bit 7 yields reverse video). In ASCII mode (`view_charset_mode = 1`) each byte is translated by `ascii_to_screen`. Bytes past the chunk or EOF render as spaces.
-- **Hex mode**: each content row shows a 4-digit hex address at cols 1-4, two groups of 4 hex byte pairs at cols 6-16 and 18-28 (via `write_hex_byte`), and two groups of 4 raw bytes as screen codes at cols 30-33 and 35-38. The ASCII columns store the raw byte value directly (no `petscii_to_screen`, no dot substitution). Bytes past the chunk or EOF render as spaces.
-
-### ASCII to screen
-
-`ascii_to_screen` translates a file byte in A to a screen code, depending on `view_charset`. It is used only in text mode when `view_charset_mode = 1`.
-
-- `$00`-`$1F`, `$7F`, `$80`-`$FF`: non-printable -> `SC_DOT` (`$2E`).
-- `$20`-`$40`, `$5B`-`$60`, `$7B`-`$7E`: punctuation/digits -> `petscii_to_screen` mapping.
-- `$41`-`$5A` (`A`-`Z`): UPPER -> subtract `$40` -> `$01`-`$1A`. LOWER -> identity (`$41`-`$5A`).
-- `$61`-`$7A` (`a`-`z`): LOWER -> subtract `$60` -> `$01`-`$1A`. UPPER -> subtract `$60` then `ora #$80` -> `$81`-`$9A` (reverse-video uppercase, so lowercase stays visible).
-
-### Character set switching
-
-`view_set_pcr_charset` sets `view_char_offset` to `$00` (UPPER) or `$40` (LOWER) immediately, and stages the PCR write by storing the target charset bits (`PCR_U` `$0C` or `PCR_L` `$0E`) into `view_pending_pcr_cs` and setting `view_pcr_pending`. It does not write PCR directly. The offset is set immediately so label rendering into `BUFFER` composes with the correct screen codes before the PCR write is flushed.
-
-`view_flush_pcr` applies a staged PCR write: it reads PCR, clears bits 3:1 with `and #$F1`, ORs in `view_pending_pcr_cs`, writes PCR, and clears `view_pcr_pending`. The read-modify-write preserves CB2 (IEEE-488 NDAC). It is called by `present_screen` between `wait_vblank` and `copy_buffer`, so the charset change and the content blit share one VBLANK window. When `view_pcr_pending` is clear it is a no-op.
-
-`view_apply_charset` saves the current PCR bits 3:1 (`and #$0E`) into `saved_pcr_cs`, then calls `view_set_pcr_charset` to stage the switch. The save happens immediately so the original bits are captured before any flush. It is called after `view_load_chunk` succeeds in `op_view`. The first `view_render` present flushes the staged switch during VBLANK.
-
-`view_restore_charset` stages the restore by storing `saved_pcr_cs` into `view_pending_pcr_cs` and setting `view_pcr_pending`. It does not write PCR directly. It is called after `view_loop` returns in `op_view`, before `full_redraw`. The `full_redraw` present flushes the staged restore during VBLANK. On open failure `view_apply_charset` is not called, so PCR is unchanged and the failure status renders in the uppercase set.
-
-### Byte to hex
-
-`write_hex_byte` writes two hex-digit screen codes for a byte in A directly to `(sp_lo),Y` and advances Y by 2. It is the routine the hex renderer calls. `nibble_to_sc` maps 0-9 to `$30`-`$39` and 10-15 to `$01`-`$06` (screen codes for `A`-`F`); it is shared by `write_hex_byte`.
+`ascii_to_screen` maps ASCII file bytes to PET screen codes for the active character set. Lowercase letters in the uppercase set become reverse-video uppercase so they remain visible.
 
 ## Keyboard and Input Bindings
 
-Keys are read with `GETIN` and compared against PETSCII constants. Bindings:
+Keys are read with `GETIN` and compared against PETSCII constants.
 
-| Key            | Constant   | Action                                  |
-| -------------- | ---------- | --------------------------------------- |
-| TAB            | `K_TAB $09` | Switch the active panel.                |
-| RETURN         | `K_RETURN $0D` | Switch the active panel.             |
-| Cursor up      | `K_UP $91` | Move selection up.                      |
-| Cursor down    | `K_DOWN $11` | Move selection down.                   |
-| HOME           | `K_HOME $13` | Jump to first entry.                  |
-| DEL            | `K_DEL $14` | Backspace in a text prompt.            |
-| RUN/STOP       | `K_STOP $03` | Quit, or cancel a prompt/confirmation.|
-| `L`            | `CH_L $4C` | Re-load the active panel.               |
-| `D`            | `CH_D $44` | Delete the selected file.               |
-| `N`            | `CH_N $4E` | Rename the selected file.               |
-| `C`            | `CH_C $43` | Copy the selected file.                 |
-| `Q`            | `CH_Q $51` | Quit to BASIC.                          |
-| `Y`            | `CH_Y $59` | Confirm in the delete prompt.           |
-| `V`            | `CH_V $56` | Open the viewer on the selected file.   |
-| `H`            | `CH_H $48` | Switch the viewer to hex display.       |
-| `T`            | `CH_T $54` | Switch the viewer to text display.      |
-| `A`            | `CH_A $41` | Switch the viewer text mode to ASCII render. |
-| `S`            | `CH_S $53` | Switch the viewer text mode to SCREEN render. |
-| `L`            | `CH_L $4C` | Switch the viewer character set to LOWER. |
-| `U`            | `CH_U $55` | Switch the viewer character set to UPPER. |
-| `E`            | `CH_E $45` | Exit the viewer, restore panels.        |
-| Cursor left    | `K_LEFT $9D` | Viewer page up.                       |
-| Cursor right   | `K_RIGHT $1D` | Viewer page down.                    |
+| Key               | Action                                        |
+|-------------------|-----------------------------------------------|
+| TAB / RETURN      | Switch the active panel.                      |
+| Cursor up/down    | Move selection.                               |
+| HOME              | Jump to first entry.                          |
+| DEL               | Backspace in a text prompt.                   |
+| RUN/STOP          | Quit, or cancel a prompt/confirmation.        |
+| L                 | Re-load the active panel.                     |
+| D                 | Delete the selected file.                     |
+| N                 | Rename the selected file.                     |
+| C                 | Copy the selected file.                       |
+| Q                 | Quit to BASIC.                                |
+| Y                 | Confirm in the delete prompt.                 |
+| V                 | Open the viewer on the selected file.         |
+| H                 | Switch the viewer to hex display.             |
+| T                 | Switch the viewer to text display.            |
+| A                 | Switch the viewer text mode to ASCII render.  |
+| S                 | Switch the viewer text mode to SCREEN render. |
+| L                 | Switch the viewer character set to LOWER.     |
+| U                 | Switch the viewer character set to UPPER.     |
+| E                 | Exit the viewer, restore panels.              |
+| Cursor left/right | Viewer page up / page down.                   |
 
-Text prompts (`prompt_text`): accept up to 16 PETSCII characters into `prompt_buf`, DEL backspaces, RETURN commits, RUN/STOP cancels.
-
-Yes/no prompt (`prompt_yn`): RETURN or `Y` confirms; any other key cancels.
-
-Viewer keys (`view_loop`): `H` switches to hex, `T` to text, `A` switches text render to ASCII, `S` switches text render to SCREEN, `L` switches the character set to LOWER, `U` switches to UPPER, cursor up/down scroll one row, cursor left/right scroll one page, HOME jumps to top, `E`/RUN/STOP closes the viewer. `Q` is ignored in the viewer (reserved for main program quit). The viewer reads keys with `GETIN` from the keyboard (default input after `CLRCHN`). `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens; `view_top` and chunk state reset on each open.
+Text prompts accept up to 16 PETSCII characters; DEL backspaces, RETURN commits, RUN/STOP cancels. The yes/no prompt treats RETURN or `Y` as confirm; any other key cancels. `Q` is ignored inside the viewer because it is reserved for quitting the main program.
 
 ## DOS Command Construction
 
@@ -269,31 +91,28 @@ After a successful mutating operation, the active panel is reloaded so the displ
 
 Errors are surfaced as on-screen messages, never as silent failures.
 
-| Condition                  | Message shown          | Source label      |
-| -------------------------- | ---------------------- | ----------------- |
-| Directory open failed      | `DRIVE NOT READY`      | `msg_no_disk`     |
-| Status channel read failed | `STATUS READ FAILED`   | `msg_status_err`  |
-| Any DOS result             | raw `NN,TEXT,TT,SS`    | `read_dos_status` |
-| Delete prompt              | `DELETE? Y/N`          | `msg_confirm_del` |
-| Rename prompt label        | `NEW NAME`             | `msg_new_name`    |
-| Copy prompt label          | `COPY TO`              | `msg_copy_to`     |
-| Viewer open failed         | `VIEW OPEN FAILED`     | `msg_view_err`    |
+| Condition                  | Message shown        |
+|----------------------------|----------------------|
+| Directory open failed      | `DRIVE NOT READY`    |
+| Status channel read failed | `STATUS READ FAILED` |
+| Any DOS result             | raw `NN,TEXT,TT,SS`  |
+| Delete prompt              | `DELETE? Y/N`        |
+| Rename prompt label        | `NEW NAME`           |
+| Copy prompt label          | `COPY TO`            |
+| Viewer open failed         | `VIEW OPEN FAILED`   |
 
 The status string is the drive's own channel-15 response, e.g. `00,OK,00,00`, `01,FILES SCRATCHED,01,00`, or `63,FILE EXISTS,00,00`.
 
 ## Startup Sequence
 
-- BASIC enters at `$0401`; `SYS 1038` (`$040E`) executes `jmp start`.
-- `start` calls `init`: save `BLNSW` and `$FB`-`$FE`, clear global and per-panel state, set both `p_drive` to 8.
-- Load both panels with `load_panel`.
-- `full_redraw`: clear screen, draw the title bar, frames, help bar, and both panels.
-- Enter `main_loop`.
+- BASIC enters the program at `$0401` via `SYS 1038`.
+- Initialise state, save borrowed zero-page bytes, and load both panels from drive 8.
+- Draw the full screen and enter the main loop.
 
 ## Shutdown Sequence
 
-- A quit key sets `quit_flag`; `main_loop` falls through to `do_exit` / `exit_program`.
-- `restore_zp` writes the saved `BLNSW` and `$FB`-`$FE` values back.
-- Control returns to BASIC, which prints `READY.`
+- A quit key exits the main loop.
+- Restore borrowed zero-page bytes and return to BASIC.
 
 ## Known Limitations
 

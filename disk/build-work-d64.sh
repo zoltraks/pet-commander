@@ -1,5 +1,5 @@
 #!/bin/sh
-# Rebuild the example fixture disks for screen-RAM verification.
+# Rebuild the fixture disk images for screen-RAM verification.
 # work.d64  (drive 8) : "PRIMARY DISK" with a few sample files.
 # another.d64 (drive 10) : "ANOTHER DISK" with a long-filename test file.
 # Requires c1541 (ships with VICE).

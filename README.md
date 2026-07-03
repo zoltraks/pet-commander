@@ -5,17 +5,21 @@ A two-panel file manager for the Commodore PET 3032, in the spirit of Norton Com
 ## Layout
 
 ```
- .............. PET COMMANDER -- DRIVE 8 ...............
+ FILE   DISK                          HELP
  +--------------------+--------------------+
  | 8: DISKNAME        | 8: DISKNAME        |
  |  10 FILENAME    P  |  10 FILENAME    P  |
  |   5 ANOTHER     S  |  ...               |
  |  ...               |                    |
  +--------------------+--------------------+
- TAB-Sw N-Ren C-Cpy D-Del V-Vie L-Lod Q-Quit
+ filename.ext          2540 B  P  DRV 8
 ```
 
-Both panels show drive 8 on startup.
+- Row 0: menu bar with `FILE`, `DISK`, and `HELP`.
+- Rows 1-23: two panels showing the directory of the current drive.
+- Row 24: status line showing the selected file's name, size, type, and drive, or a DOS status message after an operation.
+
+Both panels start on drive 8. Each panel can be switched to a different drive (8-11) through the `Disk > Change` menu.
 
 ## Cloning this repository
 
@@ -41,17 +45,18 @@ git submodule update --remote docs/skill/commodore-pet-skill
 
 ## Commands
 
-| Key            | Action                              |
-|----------------|-------------------------------------|
-| TAB or RETURN  | Switch the active (highlighted) panel |
-| Cursor up/down | Move selection                      |
-| HOME           | Jump to first entry                  |
-| L              | Re-load the active panel             |
-| D              | Delete (scratch) the selected file   |
-| N              | Rename the selected file             |
-| C              | Copy the selected file to a new name |
-| V              | Open a viewer for the selected file  |
-| Q or RUN/STOP  | Quit back to BASIC                   |
+| Key                        | Action                                |
+|----------------------------|---------------------------------------|
+| RETURN / Cursor left/right | Switch the active (highlighted) panel |
+| Cursor up/down             | Move selection                        |
+| HOME                       | Jump to first entry                   |
+| L                          | Re-load the active panel              |
+| D                          | Delete (scratch) the selected file    |
+| N                          | Rename the selected file              |
+| C                          | Copy the selected file to a new name  |
+| V                          | Open a viewer for the selected file   |
+| M or TAB                   | Open the menu bar                     |
+| Q or RUN/STOP              | Quit back to BASIC                    |
 
 For Delete, the program asks `Y/N`. RETURN counts as yes; any other key cancels.
 
@@ -59,22 +64,36 @@ For Rename and Copy, a prompt appears on the bottom line. Type up to 16 PETSCII 
 
 After every DOS command the drive status is shown on the bottom row (e.g. `00,OK,00,00` or `63,FILE EXISTS,00,00`).
 
+### Menu bar
+
+Press `M` or `TAB` to open the menu bar. Use `Cursor left/right` to switch between menus, `Cursor up/down` to select an item, and `RETURN` to activate it. Press `M`, `TAB`, or `RUN/STOP` to close the menu without selecting anything. Each menu item also has a shortcut letter shown in the dropdown.
+
+| Menu   | Items                                                         |
+|--------|---------------------------------------------------------------|
+| File   | View, Copy, Rename, Delete, Info, Find, Quit                  |
+| Disk   | Change, Reload                                                |
+| Help   | About                                                         |
+
+- **Info** opens a window showing the selected file's name, type, block count, drive, and approximate byte size.
+- **Find** opens a prompt to enter a filter string (stored per panel; directory filtering is not yet applied).
+- **Change** prompts for a drive number (8-11) and loads the active panel from that drive.
+
 ### Viewer keys
 
 The viewer is a modal overlay that covers the panels. It opens in text mode showing the start of the file.
 
-| Key            | Action                                  |
-|----------------|-----------------------------------------|
-| T              | Text display (default)                  |
-| H              | Hexadecimal display                     |
-| A              | ASCII render: translate file bytes to screen codes |
-| S              | SCREEN render: show file bytes as raw screen codes (default) |
-| L              | Switch character set to lowercase       |
-| U              | Switch character set to uppercase (default) |
-| Cursor up/down | Scroll one row                          |
-| Cursor left/right | Page up / page down                  |
-| HOME           | Jump to the start of the file           |
-| E or RUN/STOP  | Close the viewer and restore the panels |
+| Key               | Action                                                       |
+|-------------------|--------------------------------------------------------------|
+| T                 | Text display (default)                                       |
+| H                 | Hexadecimal display                                          |
+| A                 | ASCII render: translate file bytes to screen codes           |
+| S                 | SCREEN render: show file bytes as raw screen codes (default) |
+| L                 | Switch character set to lowercase                            |
+| U                 | Switch character set to uppercase (default)                  |
+| Cursor up/down    | Scroll one row                                               |
+| Cursor left/right | Page up / page down                                          |
+| HOME              | Jump to the start of the file                                |
+| E or RUN/STOP     | Close the viewer and restore the panels                      |
 
 The viewer loads file data in fixed-size chunks from disk. Scrolling within a chunk needs no disk I/O; scrolling past the chunk boundary reloads from disk. The current byte offset is preserved when switching between text and hex. On close, the panels reappear unchanged.
 
@@ -88,16 +107,16 @@ Text mode has two render modes. SCREEN (default) shows file bytes directly as sc
 
 Uses the `dasm` Docker image if available, otherwise falls back to a local `dasm` binary in `PATH` (see `docs/skill/commodore-pet-skill/utility/dasm-assembler.md` for setup).
 
-Output: `build/commander.prg`. PRG header carries load address `$0401`, so VICE inject-mode autostart works as-is.
+Output: `build/commander.prg`. PRG header carries load address `$0401`. The recommended way to run is from a D64 disk image (see `## Why autostart from disk` below); injection of a bare PRG at `$0401` does not reliably initialise BASIC's pointers under VICE.
 
 ## Running in VICE
 
 ```
-./run.sh                 # autostarts example/work.d64
+./run.sh                 # autostarts disk/work.d64
 ./run.sh some-other.d64  # use a different disk image (must contain commander.prg)
 ```
 
-`example/work.d64` is shipped pre-built and contains the program itself plus 5 test files (2 PRG + 3 SEQ, including one with a long name) so the panels render with real entries the first time the program starts. `build.sh` refreshes the copy of `commander.prg` inside `work.d64` every time it rebuilds. Regenerate the entire disk with `example/build-work-d64.sh` if you want to add or remove sample files.
+`disk/work.d64` is shipped pre-built and contains the program itself plus 5 test files (2 PRG + 3 SEQ, including one with a long name) so the panels render with real entries the first time the program starts. `build.sh` refreshes the copy of `commander.prg` inside `disk/work.d64` every time it rebuilds. Regenerate the entire disk with `disk/build-work-d64.sh` if you want to add or remove sample files.
 
 ## Why autostart from disk
 
@@ -110,14 +129,14 @@ The robust path is to embed the PRG inside the D64 and let VICE autostart the di
 The underlying invocation is:
 
 ```
-xpet -model 3032 -drive8type 2031 -autostart work.d64
+xpet -model 3032 -drive8type 2031 -autostart disk/work.d64
 ```
 
 For a native PET D80 image use `-drive8type 8050`.
 
 ## Verified
 
-- Clean DASM assembly (`Complete. (0)`), output size ~8.8 KB.
+- Clean DASM assembly (`Complete. (0)`) with zero errors and zero warnings.
 - PRG header carries load address `$0401`; `SYS 1038` ($040E) lands on a `JMP start` instruction.
 - Runs for >100M cycles in `xpet -warp` with a real D64 mounted on drive 8 without crashing or runaway memory writes.
 
@@ -132,10 +151,12 @@ Full visual verification requires a graphical xpet session.
 - Global state and per-panel arrays
 - `start` / `main_loop` / `dispatch_key`
 - Cursor + scroll handling
-- Screen drawing (frames, title bar, help bar, panel render)
+- Screen drawing (frames, menu bar, status line, panel render)
 - Present/Blit (`present_screen`, `wait_vblank`, `copy_buffer`)
 - `load_panel` (open `$`, parse CBM-DOS directory)
 - `op_delete`, `op_rename`, `op_copy`
+- Menu system (`menu_loop`, `draw_dropdown`, `draw_menu_bar`)
+- `op_info`, `op_change`, `op_find`
 - `send_dos_cmd`, `read_dos_status`
 - `prompt_text`, `prompt_yn`
 - Viewer (`op_view`, `view_load_chunk`, `view_render`, `view_draw_header`, `view_draw_footer`, `view_render_text`, `view_render_hex`, `view_loop`, scrolling, charset helpers, `ascii_to_screen`, `byte_to_hex`)
@@ -145,9 +166,9 @@ The program runs from `$0401` (BASIC stub `10 SYS1038`) and falls back to BASIC 
 
 ## Known limitations (this revision)
 
-- Both panels are pinned to drive 8.
-- No Move command; on a single drive Move would be Rename, and the dest panel always shows drive 8 anyway.
+- No Move command; on a single drive Move would be Rename.
 - The viewer is read-only: no editing, no search, and no goto-offset.
+- The `Find` filter stores a per-panel search string but is not yet applied to the directory listing.
 - No line-wrap in the viewer text mode; long lines are clipped to the viewer width.
 - Maximum 64 entries per panel.
 - Filename column shows up to 12 chars (full name kept internally for DOS commands).
@@ -184,3 +205,7 @@ Read the full active set, in this order, before making any change. Never assume 
 ### Workflow
 
 For non-trivial changes, follow the version-based cycle in `docs/WORKFLOW.md`: change request, then implementation plan, then confirm before implementing. The current version is `VERSION_MAJOR`/`VERSION_MINOR` in `src/commander.asm`. See `docs/VERSIONING.md`.
+
+## License
+
+PET Commander is released under the MIT License. See the `LICENSE` file in the repository root for the full text.

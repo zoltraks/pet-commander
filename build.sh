@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build PET Commander into build/commander.prg, then refresh example/work.d64.
+# Build PET Commander into build/commander.prg, then refresh disk/work.d64.
 # Prefers dasm-container Docker image; falls back to local binaries.
 
 set -e
@@ -22,9 +22,9 @@ fi
 echo "Built $OUT"
 ls -l "$OUT"
 
-# Refresh the example disk so the program inside it stays current.
-if [ -x example/build-work-d64.sh ]; then
+# Refresh the disk fixture so the program inside it stays current.
+if [ -x disk/build-work-d64.sh ]; then
     echo
-    example/build-work-d64.sh >/dev/null
-    echo "Refreshed example/work.d64"
+    disk/build-work-d64.sh >/dev/null
+    echo "Refreshed disk/work.d64"
 fi

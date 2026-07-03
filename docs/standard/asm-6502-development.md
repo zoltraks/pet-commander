@@ -1,7 +1,5 @@
 # PET Commander Assembly Rules
 
-<!-- Version: 2.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 ## Scope
 
 This document records what is specific to PET Commander: project structure, the build and test workflow, project conventions, and the few places where this project deliberately overrides the general standard.
@@ -17,17 +15,17 @@ src/
   commander.asm        # the entire program: code, data, buffers
 build/
   commander.prg        # generated PRG (load address $0401)
-example/
-  work.d64             # generated example disk
-  build-work-d64.sh    # regenerates the example disk
-build.sh               # assemble + refresh example disk
+disk/
+  work.d64             # generated fixture disk
+  build-work-d64.sh    # regenerates the fixture disk
+build.sh               # assemble + refresh disk fixture
 run.sh                 # launch in xpet
 ```
 
 - The whole program is one source file. Inside it, sections are separated by banner comments and ordered to match the modules in `ARCHITECTURE.md`: boot stub, lifecycle, main loop, KERNAL wrappers, navigation, drawing, formatting helpers, directory loader, file operations, DOS channel, prompts, data buffers.
 - The project version lives in `src/commander.asm` as `VERSION_MAJOR` and `VERSION_MINOR`, not in a separate file.
 - No macros or conditional assembly are in use today. Introduce them only when they reduce duplication without obscuring the memory layout.
-- Version-control exclusions: `build/` output and the generated `example/work.d64` are artifacts (see `IGNORE.md`).
+- Version-control exclusions: `build/` output and the generated `disk/work.d64` are artifacts (see `IGNORE.md`).
 
 ## Project Conventions
 
@@ -64,7 +62,7 @@ These supplement or override the general standard for PET Commander code.
 ## Build
 
 - Development and release build: `./build.sh` (Docker `dasm` image preferred, local `dasm` fallback).
-- Refresh the example disk: `example/build-work-d64.sh` (run automatically by `build.sh`).
+- Refresh the fixture disk: `disk/build-work-d64.sh` (run automatically by `build.sh`).
 - For DASM command-line options and Docker invocation, see `docs/skill/commodore-pet-skill/utility/dasm-assembler.md`.
 
 ## Testing

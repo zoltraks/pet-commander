@@ -1,5 +1,15 @@
 # Changes
 
+## Version 0.4
+
+Documentation cleanup and project layout restructuring.
+
+- **Changed** the project fixture directory name from `example/` to `disk/` and updated all references in scripts, source, and documentation. `build.sh` now refreshes `disk/work.d64`; `run.sh` defaults to `disk/work.d64`.
+- **Changed** the `src/commander.asm` header comment to document the build, disk-refresh, and run commands using the `disk/` paths.
+- **Changed** the ABOUT modal border to use T-junction characters where the modal frame crosses the panel divider, so the frame aligns visually with the underlying panel frames.
+- **Removed** redundant, obvious, and build-dependent content from the project guideline files (excluding `README.md` and the `commodore-pet-skill` submodule). This includes version/date headers, duplicate sections, detailed constants/ROM-symbol tables, and build-size numbers.
+- **Added** refactoring proposal and assessment documents for the documentation distillation under `docs/refactoring/0.3/`.
+
 ## Version 0.3
 
 File viewer, double-buffered flicker-free rendering, and viewer refactoring.

@@ -1,7 +1,5 @@
 # Architecture
 
-<!-- Version: 1.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 This file is the authoritative source for how PET Commander is organised.
 
 ## Overview
@@ -19,7 +17,7 @@ All source lives in a single file, `src/commander.asm`. The logical modules belo
 |  PET 3032 (6502)  | <---------------------------------> |  Disk drive      |
 |                   |                                     |  (CBM-DOS 2031)  |
 |  commander.prg    |  OPEN "$", read dir / send cmd /    |                  |
-|  @ $0401          |  read status channel 15             |  work.d64        |
+|  @ $0401          |  read status channel 15             |  disk/work.d64   |
 |                   |                                     |                  |
 |  Screen RAM $8000 |  direct poke (40x25 screen codes)   +------------------+
 +-------------------+
@@ -29,22 +27,22 @@ All source lives in a single file, `src/commander.asm`. The logical modules belo
 
 Each module is a labelled section of `src/commander.asm`. Responsibilities are kept narrow.
 
-| Module               | Entry labels                          | Responsibility                                                   |
-| -------------------- | ------------------------------------- | --------------------------------------------------------------- |
-| Boot stub            | `nextline`, `filler_40d`, `jmp start` | BASIC stub at `$0401` so `SYS 1038` enters the program.         |
-| Lifecycle            | `start`, `init`, `exit_program`, `restore_zp` | Save/restore borrowed zero page, set up state, tear down.       |
-| Main loop            | `main_loop`, `dispatch_key`           | Read a key, route to a handler, check the quit flag.            |
-| KERNAL wrappers      | `pet_setnam`, `pet_setlfs`, `pet_open`, `pet_close` | PET-specific OPEN/CLOSE that bypass BASIC parameter parsing.    |
-| Navigation           | `cursor_up`, `cursor_down`, `do_up`, `do_down`, `do_home`, `do_switch` | Move selection, scroll the window, switch active panel.        |
-| Screen drawing       | `full_redraw`, `redraw_panels`, `redraw_active`, `clear_screen`, `draw_title_bar`, `draw_frames`, `draw_help_bar`, `draw_status`, `draw_panel`, `draw_panel_header`, `draw_panel_rows`, `draw_entry` | Compose the static frame and dynamic panel content into `BUFFER` (the back buffer). |
-| Present / blit       | `present_screen`, `wait_vblank`, `view_flush_pcr`, `copy_buffer` | Wait for VBLANK (poll VIA PB5), flush any staged PCR charset write, and copy `BUFFER` to `SCREEN` in one atomic pass. The only writer of `SCREEN`. The PCR flush applies a staged charset change during the same VBLANK window so character-set switches and content updates appear together. |
-| Number / text format | `print_num3`, `mul20`, `petscii_to_screen`, `row_addr_sp`, `panel_entry_sp` | Helpers for block counts, record indexing, and PETSCII-to-screen-code conversion. |
-| Directory loader     | `load_panel`                          | Open `$`, run the directory parse state machine, fill the entry buffer. |
-| File operations      | `op_delete`, `op_rename`, `op_copy`, `op_cancel`   | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.     |
-| DOS channel          | `send_dos_cmd`, `read_dos_status`     | Send a command on channel 15 and read back the status string.   |
-| Prompts              | `prompt_text`, `prompt_yn`, `draw_prompt_label`, `show_prompt_buf` | Bottom-line text entry and yes/no confirmation.                 |
-| Viewer               | `op_view`, `view_load_chunk`, `view_render`, `view_draw_frame`, `view_draw_header`, `view_draw_footer`, `view_render_text`, `view_render_hex`, `view_loop`, `view_scroll_down`, `view_scroll_up`, `view_page_down`, `view_page_up`, `view_home`, `view_reload_at_top`, `view_set_mode_params`, `view_set_pcr_charset`, `view_flush_pcr`, `view_apply_charset`, `view_restore_charset`, `ascii_to_screen` | Modal file viewer with bordered frame, header/footer bars, text and hex display, SCREEN/ASCII render modes, UPPER/LOWER character-set switching with deferred PCR write flushed during VBLANK, PCR save/restore, charset-aware label rendering, chunk-based partial load, row and page scrolling. |
-| Data buffers         | `entries_p0`, `entries_p1`, `cmd_buf`, `prompt_buf`, `savename`, `status_buf`, `view_chunk` | Per-panel entry tables, scratch buffers, and the viewer chunk buffer.                     |
+| Module               | Responsibility                                                                                                                      |
+|----------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| Boot stub            | BASIC stub at `$0401` so `SYS 1038` enters the program.                                                                             |
+| Lifecycle            | Save/restore borrowed zero page, set up state, tear down.                                                                           |
+| Main loop            | Read a key, route to a handler, check the quit flag.                                                                                |
+| KERNAL wrappers      | PET-specific OPEN/CLOSE that bypass BASIC parameter parsing.                                                                        |
+| Navigation           | Move selection, scroll the window, switch active panel.                                                                             |
+| Screen drawing       | Compose the static frame and dynamic panel content into `BUFFER` (the back buffer).                                                 |
+| Present / blit       | Wait for VBLANK, flush any staged PCR charset write, and copy `BUFFER` to `SCREEN` in one atomic pass. The only writer of `SCREEN`. |
+| Number / text format | Helpers for block counts, record indexing, and PETSCII-to-screen-code conversion.                                                   |
+| Directory loader     | Open `$`, run the directory parse state machine, fill the entry buffer.                                                             |
+| File operations      | Build a CBM-DOS command for the selected entry and send it. Shared cancel path for all three.                                       |
+| DOS channel          | Send a command on channel 15 and read back the status string.                                                                       |
+| Prompts              | Bottom-line text entry and yes/no confirmation.                                                                                     |
+| Viewer               | Modal file viewer with text and hex display, SCREEN/ASCII render modes, and UPPER/LOWER character-set switching.                    |
+| Data buffers         | Per-panel entry tables, scratch buffers, and the viewer chunk buffer.                                                               |
 
 What modules must not do:
 
@@ -58,13 +56,13 @@ What modules must not do:
 
 State is separated into three domains.
 
-- **Global UI state**: `active_panel`, `quit_flag`, `status_msg`, `key_val`. Which panel is active and what the bottom row shows.
-- **Per-panel state**: parallel two-element arrays `p_drive`, `p_count`, `p_sel`, `p_top`, plus the title buffer `p_title`. Index 0 is the left panel, index 1 is the right.
-- **Entry data**: two fixed entry tables `entries_p0` and `entries_p1`, each `MAX_ENTRY * ENT_SIZE` bytes. One table per panel.
+- **Global UI state**: which panel is active, whether a status message is shown, and the last key value.
+- **Per-panel state**: drive number, entry count, selection index, scroll position, and disk title for each panel.
+- **Entry data**: two fixed entry tables, one per panel.
 
-Scratch buffers (`cmd_buf`, `prompt_buf`, `savename`, `status_buf`) are transient and owned by whichever operation is running.
+Scratch buffers are transient and owned by whichever operation is running.
 
-The viewer owns its own state domain: `view_mode`, `view_charset_mode`, `view_charset`, `view_char_offset`, `saved_pcr_cs`, `view_pcr_pending`, `view_pending_pcr_cs`, `view_top`, `view_chunk_base`, `view_chunk_len`, `view_at_eof`, `view_row_size`, `view_screen_size`, `view_page_size`, `view_fname`, `view_fname_len`, and the `view_chunk` buffer. This state is separate from panel state. `view_mode`, `view_charset_mode`, and `view_charset` persist across viewer opens within one program run; the rest reset on each open. `saved_pcr_cs` holds the PCR charset bits saved on entry and restored on exit. `view_pcr_pending` and `view_pending_pcr_cs` stage a deferred PCR charset write that `present_screen` flushes during VBLANK so the charset change and the content blit appear together.
+The viewer maintains its own state domain, separate from panel state. It tracks display mode, character set, scroll position, chunk boundaries, and a file chunk buffer. Some viewer flags persist across opens; per-open state resets each time.
 
 ## Data Flow
 
@@ -134,9 +132,9 @@ This keeps I/O and rendering on separate, auditable seams.
   - **Trade-off**: A hard cap of `MAX_ENTRY` (64) entries per panel.
 
 - **AD-5 Autostart from a D64 image**
-  - **Decision**: Ship and launch the program from inside `example/work.d64`, not as a bare PRG.
+  - **Decision**: Ship and launch the program from inside `disk/work.d64`, not as a bare PRG.
   - **Rationale**: VICE Inject mode does not reliably set BASIC pointers for a `$0401` PRG, producing `?SYNTAX ERROR IN 10`. Disk autostart uses BASIC's real LOAD path, which sets every pointer correctly and leaves the disk mounted on drive 8.
-  - **Trade-off**: The build must refresh the copy of the program inside the D64. Handled by `build.sh` and `example/build-work-d64.sh`.
+  - **Trade-off**: The build must refresh the copy of the program inside the D64. Handled by `build.sh` and `disk/build-work-d64.sh`.
 
 - **AD-6 Viewer as modal overlay with chunk-based partial load**
   - **Decision**: The viewer is a modal overlay that covers the panels, owns its own state and chunk buffer, and restores the panels via `full_redraw` on close. File data is loaded in fixed-size chunks (`VIEW_CHUNK` = 2048 bytes) from a sequential read channel.

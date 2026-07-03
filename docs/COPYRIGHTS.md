@@ -1,7 +1,5 @@
 # Copyrights
 
-<!-- Version: 1.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 This document defines copyright and licensing rules for PET Commander.
 
 ## Copyright and License Requirements
@@ -18,11 +16,7 @@ This document defines copyright and licensing rules for PET Commander.
 
 ### Project License
 
-If the file `LICENSE` or `LICENSE.md` exists in the repository root, the project is released under the license specified therein.
-
-If no license file exists, this project is considered proprietary and all rights belong to the owner. No part of this project may be copied, modified, or distributed without explicit written permission from the owner.
-
-At the time of writing, no license file is present.
+The project is released under the MIT License. The full text is in the `LICENSE` file in the repository root.
 
 ## Platform and ROM Code
 
@@ -47,5 +41,5 @@ GPL-licensed code may not be copied into this project without explicit written a
 
 ## Asset Licensing
 
-- Sample files inside `example/work.d64` must be original or trivially generated test data.
+- Sample files inside `disk/work.d64` must be original or trivially generated test data.
 - Any added artwork, character data, or media must be original or from licensed sources with compatible terms.

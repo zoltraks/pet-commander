@@ -1,7 +1,5 @@
 # References
 
-<!-- Version: 1.0.0 | Date: 2026-06-30 | Status: Requires review -->
-
 External knowledge sources for the PET Commander domain. These are consulted, not treated as project requirements.
 
 ## Hardware and ROM
