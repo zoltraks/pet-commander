@@ -1,25 +1,26 @@
 # PET Commander
 
-A two-panel file manager for the Commodore PET 3032, in the spirit of Norton Commander.
+A dual-panel file manager for the Commodore PET 3032. It shows two disk directories side by side, each panel on its own drive, with a menu bar for file operations and a status line showing the selected file.
 
 ## Layout
 
 ```
- FILE   DISK                          HELP
+ FILE   DISK                            HELP
  +--------------------+--------------------+
- | 8: DISKNAME        | 8: DISKNAME        |
- |  10 FILENAME    P  |  10 FILENAME    P  |
- |   5 ANOTHER     S  |  ...               |
+ |8:PRIMARY DISK      |10:ANOTHER DISK     |
+ +--------------------+--------------------+
+ |FILENAME          10|OTHERFILENAME      5|
+ |ANOTHER            1|  ...               |
  |  ...               |                    |
  +--------------------+--------------------+
- filename.ext          2540 B  P  DRV 8
+ FILENAME                               1  S
 ```
 
 - Row 0: menu bar with `FILE`, `DISK`, and `HELP`.
-- Rows 1-23: two panels showing the directory of the current drive.
-- Row 24: status line showing the selected file's name, size, type, and drive, or a DOS status message after an operation.
+- Rows 1-23: two panels showing the directory of each panel's current drive.
+- Row 24: status line showing the selected file's name (16 chars), block count, and type, or a DOS status message after an operation.
 
-Both panels start on drive 8. Each panel can be switched to a different drive (8-11) through the `Disk > Change` menu.
+Both panels start on drive 8, but each can be switched to drives 8-11 through the `Disk > Change` menu, so the two panels can display different disks at the same time.
 
 ## Cloning this repository
 
@@ -45,6 +46,24 @@ git submodule update --remote docs/skill/commodore-pet-skill
 
 ## Commands
 
+Most operations are available through the menu bar. Single-letter shortcuts are also provided for the common actions.
+
+### Menu bar
+
+Press `M` or `TAB` to open the menu bar. Use `Cursor left/right` to switch between menus, `Cursor up/down` to select an item, and `RETURN` to activate it. Press `M`, `TAB`, or `RUN/STOP` to close the menu without selecting anything. The shortcut letter for each item is shown in the dropdown.
+
+| Menu   | Items (shortcut letter)                                                  |
+|--------|--------------------------------------------------------------------------|
+| File   | View (V), Copy (C), Rename (N), Delete (D), Info (I), Find (F), Quit (Q) |
+| Disk   | Change (C), Reload (R)                                                   |
+| Help   | About (A)                                                                |
+
+- **Info** opens a window showing the selected file's name, type, block count, drive, and approximate byte size.
+- **Find** opens a prompt to enter a filter string (stored per panel; directory filtering is not yet applied).
+- **Change** prompts for a drive number (8-11) and loads the active panel from that drive.
+
+### Quick keys
+
 | Key                        | Action                                |
 |----------------------------|---------------------------------------|
 | RETURN / Cursor left/right | Switch the active (highlighted) panel |
@@ -63,20 +82,6 @@ For Delete, the program asks `Y/N`. RETURN counts as yes; any other key cancels.
 For Rename and Copy, a prompt appears on the bottom line. Type up to 16 PETSCII chars; DEL backspaces; RETURN commits; RUN/STOP cancels.
 
 After every DOS command the drive status is shown on the bottom row (e.g. `00,OK,00,00` or `63,FILE EXISTS,00,00`).
-
-### Menu bar
-
-Press `M` or `TAB` to open the menu bar. Use `Cursor left/right` to switch between menus, `Cursor up/down` to select an item, and `RETURN` to activate it. Press `M`, `TAB`, or `RUN/STOP` to close the menu without selecting anything. Each menu item also has a shortcut letter shown in the dropdown.
-
-| Menu   | Items                                                         |
-|--------|---------------------------------------------------------------|
-| File   | View, Copy, Rename, Delete, Info, Find, Quit                  |
-| Disk   | Change, Reload                                                |
-| Help   | About                                                         |
-
-- **Info** opens a window showing the selected file's name, type, block count, drive, and approximate byte size.
-- **Find** opens a prompt to enter a filter string (stored per panel; directory filtering is not yet applied).
-- **Change** prompts for a drive number (8-11) and loads the active panel from that drive.
 
 ### Viewer keys
 
